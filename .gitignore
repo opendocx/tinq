@@ -1,8 +1,10 @@
 # Dependency directories
-node_modules/
+node_modules
 
 # testing output
+coverage
 .nyc_output
+lcov*
 
 # development environment prefs
 .vscode
