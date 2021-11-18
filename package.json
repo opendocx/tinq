@@ -1,0 +1,23 @@
+{
+  "name": "yevaluate",
+  "version": "0.1.0",
+  "description": "YATTE Expression Evaluation",
+  "main": "./src/index.mjs",
+  "scripts": {
+    "test": "mocha test/index.test.mjs -R spec",
+    "test2": "nyc --reporter=lcov --reporter=text-summary mocha"
+  },
+  "author": {
+    "name": "Lowell Stewart",
+    "email": "lowell@opendocx.com"
+  },
+  "license": "MPL-2.0",
+  "dependencies": {},
+  "devDependencies": {
+    "chai": "^4.3.4",
+    "eslint": "^8.2.0",
+    "mocha": "^9.1.3",
+    "nyc": "^15.1.0",
+    "standard": "^16.0.4"
+  }
+}

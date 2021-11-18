@@ -1,0 +1,8 @@
+# Dependency directories
+node_modules/
+
+# testing output
+.nyc_output
+
+# development environment prefs
+.vscode
