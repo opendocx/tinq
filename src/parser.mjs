@@ -1,14 +1,17 @@
 import { isDefined, isString, isNumber, getStringValue, noop } from "./utils.mjs";
+import filters from "./filters.mjs"
 
 export class Parser {
-	constructor (lexer, $filter, options) {
+	constructor (lexer, options) {
 		this.lexer = lexer
-		this.$filter = $filter
 		this.options = options
+		this.$filter = function getFilter (name) {
+			return filters[name]
+		}
 		this.ast = new AST(lexer, options)
 		this.astCompiler = options.csp
-			? new ASTInterpreter(this.ast, $filter)
-			: new ASTCompiler(this.ast, $filter)
+			? new ASTInterpreter(this.ast, this.$filter)
+			: new ASTCompiler(this.ast, this.$filter)
 	}
 
 	parse (text) {
@@ -278,18 +281,19 @@ export class AST {
 	}
 
 	filter (baseExpression) {
-		const args = [baseExpression]
+		const filterIdent = this.identifier()
+		const filterFunc = filters[filterIdent.name]
+		const args = []
 		const result = {
-			type: AST.CallExpression,
-			callee: this.identifier(),
-			arguments: args,
-			filter: true
+			type: filterFunc && filterFunc.listFilter ? AST.ListFilterExpression : AST.FilterExpression,
+			filter: filterIdent,
+			input: baseExpression,
+			arguments: args
 		}
-
+		if (filterFunc && filterFunc.rtlFilter) result.rtl = true
 		while (this.expect(":")) {
 			args.push(this.expression())
 		}
-
 		return result
 	}
 
@@ -432,8 +436,12 @@ export class AST {
 	}
 }
 
-AST.Program = "Program"
-AST.ExpressionStatement = "ExpressionStatement"
+AST.Program = "Program" // a template
+AST.ExpressionStatement = "ExpressionStatement" // a content field in a template
+AST.IfStatement = 'IfStatement' // an if/elseif/else/endif block in a template
+AST.ForOfStatement = 'ForOfStatement' // a list/endlist block in a template
+AST.BlockStatement = 'BlockStatement' // a sequence of fields in a template
+AST.EmptyStatement = 'EmptyStatement' // no-op statement in a template
 AST.AssignmentExpression = "AssignmentExpression"
 AST.ConditionalExpression = "ConditionalExpression"
 AST.LogicalExpression = "LogicalExpression"
@@ -447,7 +455,10 @@ AST.ArrayExpression = "ArrayExpression"
 AST.Property = "Property"
 AST.ObjectExpression = "ObjectExpression"
 AST.ThisExpression = "ThisExpression"
+// Non-standard
 AST.LocalsExpression = "LocalsExpression"
+AST.FilterExpression = "FilterExpression"
+AST.ListFilterExpression = "ListFilterExpression"
 
 // Internal use only
 AST.NGValueParameter = "NGValueParameter"
@@ -521,12 +532,21 @@ function findConstantAndWatchExpressions (ast, $filter) {
 			ast.toWatch = [ast]
 			break
 		case AST.CallExpression:
-			isStatelessFilter = ast.filter
-				? isStateless($filter, ast.callee.name)
-				: false;
-			allConstants = isStatelessFilter
+			ast.arguments.forEach(expr => {
+				findConstantAndWatchExpressions(expr, $filter)
+			})
+			ast.constant = false
+			ast.toWatch = [ast]
+			break
+		case AST.FilterExpression:
+		case AST.ListFilterExpression:
 			argsToWatch = []
-      ast.arguments.forEach(expr => {
+			findConstantAndWatchExpressions(ast.input, $filter)
+			if (!ast.input.constant) {
+				argsToWatch.push.apply(argsToWatch, ast.input.toWatch)
+			}
+			allConstants = true
+			ast.arguments.forEach(expr => {
 				findConstantAndWatchExpressions(expr, $filter)
 				allConstants = allConstants && expr.constant
 				if (!expr.constant) {
@@ -534,7 +554,7 @@ function findConstantAndWatchExpressions (ast, $filter) {
 				}
 			})
 			ast.constant = allConstants
-			ast.toWatch = isStatelessFilter ? argsToWatch : [ast]
+			ast.toWatch = argsToWatch
 			break
 		case AST.AssignmentExpression:
 			findConstantAndWatchExpressions(ast.left, $filter)
@@ -900,51 +920,57 @@ return fn`
 				break
 			case AST.CallExpression:
 				intoId = intoId || this.nextId()
-				if (ast.filter) {
-					right = self.filter(ast.callee.name)
-					args = []
-					ast.arguments.forEach(expr => {
-						const argument = self.nextId()
-						self.recurse(expr, argument)
-						args.push(argument)
-					})
-					expression = right + "(" + args.join(",") + ")"
-					self.assign(intoId, expression)
-					recursionFn(intoId)
-				} else {
-					right = self.nextId()
-					left = {}
-					args = []
-					self.recurse(ast.callee, right, left, function () {
-						self.if_(
-							self.notNull(right),
-							function () {
-								ast.arguments.forEach(expr => {
-									self.recurse(
-										expr,
-										ast.constant ? undefined : self.nextId(),
-										undefined,
-										function (argument) {
-											args.push(argument)
-										}
-									)
-								})
-								if (left.name) {
-									expression =
-										self.member(left.context, left.name, left.computed) +
-										"(" + args.join(",") + ")"
-								} else {
-									expression = right + "(" + args.join(",") + ")"
-								}
-								self.assign(intoId, expression)
-							},
-							function () {
-								self.assign(intoId, "undefined")
+				right = self.nextId()
+				left = {}
+				args = []
+				self.recurse(ast.callee, right, left, function () {
+					self.if_(
+						self.notNull(right),
+						function () {
+							ast.arguments.forEach(expr => {
+								self.recurse(
+									expr,
+									ast.constant ? undefined : self.nextId(),
+									undefined,
+									function (argument) {
+										args.push(argument)
+									}
+								)
+							})
+							if (left.name) {
+								expression =
+									self.member(left.context, left.name, left.computed) +
+									"(" + args.join(",") + ")"
+							} else {
+								expression = right + "(" + args.join(",") + ")"
 							}
-						)
-						recursionFn(intoId)
-					})
-				}
+							self.assign(intoId, expression)
+						},
+						function () {
+							self.assign(intoId, "undefined")
+						}
+					)
+					recursionFn(intoId)
+				})
+				break
+			case AST.FilterExpression:
+				intoId = intoId || this.nextId()
+				right = self.filter(ast.filter.name)
+				args = []
+				left = self.nextId()
+				self.recurse(ast.input, left)
+				args.push(left)
+				ast.arguments.forEach(expr => {
+					const argument = self.nextId()
+					self.recurse(expr, argument)
+					args.push(argument)
+				})
+				expression = right + "(" + args.join(",") + ")"
+				self.assign(intoId, expression)
+				recursionFn(intoId)
+				break
+			case AST.ListFilterExpression:
+				throw new Error("Not Implemented")
 				break
 			case AST.AssignmentExpression:
 				right = this.nextId()
@@ -1269,31 +1295,38 @@ class ASTInterpreter {
 				forEach(ast.arguments, function(expr) {
 					args.push(self.recurse(expr))
 				})
-				if (ast.filter) right = this.$filter(ast.callee.name)
-				if (!ast.filter) right = this.recurse(ast.callee, true)
-				return ast.filter
-					? function (scope, locals, assign, inputs) {
-							const values = []
-							for (let i = 0; i < args.length; ++i) {
-								values.push(args[i](scope, locals, assign, inputs))
-							}
-							const value = right.apply(undefined, values, inputs)
-							return context
-								? { context: undefined, name: undefined, value: value }
-								: value
-					  }
-					: function (scope, locals, assign, inputs) {
-							const rhs = right(scope, locals, assign, inputs)
-							let value
-							if (rhs.value != null) {
-								const values = []
-								for (let i = 0; i < args.length; ++i) {
-									values.push(args[i](scope, locals, assign, inputs))
-								}
-								value = rhs.value.apply(rhs.context, values)
-							}
-							return context ? { value: value } : value
-					  }
+				right = this.recurse(ast.callee, true)
+				return function (scope, locals, assign, inputs) {
+					const rhs = right(scope, locals, assign, inputs)
+					let value
+					if (rhs.value != null) {
+						const values = []
+						for (let i = 0; i < args.length; ++i) {
+							values.push(args[i](scope, locals, assign, inputs))
+						}
+						value = rhs.value.apply(rhs.context, values)
+					}
+					return context ? { value: value } : value
+				}
+			case AST.FilterExpression:
+				args = []
+				args.push(self.recurse(ast.input))
+				forEach(ast.arguments, function(expr) {
+					args.push(self.recurse(expr))
+				})
+				right = this.$filter(ast.filter.name)
+				return function (scope, locals, assign, inputs) {
+					const values = []
+					for (let i = 0; i < args.length; ++i) {
+						values.push(args[i](scope, locals, assign, inputs))
+					}
+					const value = right.apply(undefined, values, inputs)
+					return context
+						? { context: undefined, name: undefined, value: value }
+						: value
+				}
+			case AST.ListFilterExpression:
+				throw new Error("Not Implemented")
 			case AST.AssignmentExpression:
 				left = this.recurse(ast.left, true, 1)
 				right = this.recurse(ast.right)

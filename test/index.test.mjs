@@ -1,7 +1,7 @@
-import { Lexer, Parser, compile, filters } from '../src/index.mjs'
+import { Lexer, Parser, compile } from '../src/index.mjs'
 import chai from 'chai'
 var expect = chai.expect
-var expressions = { Lexer, Parser, filters }
+var expressions = { Lexer, Parser }
 
 chai.config.includeStack = true;
 
@@ -26,7 +26,7 @@ describe("expressions", function() {
 		});
 
 		it("should provide a .parse()-method", function() {
-			var parser = new expressions.Parser(undefined, undefined, {});
+			var parser = new expressions.Parser(undefined, {});
 
 			expect(parser.parse).to.be.a("function");
 		});
@@ -349,21 +349,10 @@ describe("expressions", function() {
 
 		describe("when using filters", function() {
 			it("should apply the given filter", function() {
-				expressions.filters.currency = function(input, currency, digits) {
-					input = input.toFixed(digits);
-
-					if (currency === "EUR") {
-						return input + "€";
-					}
-					return input + "$";
-				};
-
-				evaluate = compile("1.2345 | currency:selectedCurrency:2");
+				evaluate = compile('1.2345 | format:"000.00"');
 				expect(
-					evaluate({
-						selectedCurrency: "EUR"
-					})
-				).to.equal("1.23€");
+					evaluate({})
+				).to.equal("001.23");
 			});
 		});
 
@@ -427,12 +416,6 @@ describe("expressions", function() {
 					compile.cache = Object.create(null);
 				});
 			});
-		});
-	});
-
-	describe(".filters", function() {
-		it("should be an object", function() {
-			expect(expressions.filters).to.be.an("object");
 		});
 	});
 });

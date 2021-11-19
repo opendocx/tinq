@@ -2,7 +2,6 @@ import { createMap } from './utils.mjs';
 import { Lexer } from './lexer.mjs'
 import { Parser } from './parser.mjs';
 
-export var filters = {}
 export { Lexer, Parser }
 
 const parserOptions = {
@@ -21,13 +20,7 @@ const parserOptions = {
 const lexerOptions = {}
 
 var lexer = new Lexer(lexerOptions);
-var parser = new Parser(
-	lexer,
-	function getFilter(name) {
-		return filters[name];
-	},
-	parserOptions
-)
+var parser = new Parser(lexer, parserOptions)
 
 /**
  * Compiles src and returns a function that executes src on a target object.
