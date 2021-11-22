@@ -29,7 +29,8 @@ export class AST {
     }
   }
 
-	ast (text) {
+	ast (text) { // deprecated, for expressions, in favor of ast_expr below.
+		// instead, top-level asts/programs are reserved for templates.
 		this.text = text
 		this.tokens = this.lexer.lex(text)
 
@@ -39,6 +40,16 @@ export class AST {
 			this.throwError("is an unexpected token", this.tokens[0])
 		}
 
+		return value
+	}
+
+	ast_expr (text) {
+		this.text = text
+		this.tokens = this.lexer.lex(text)
+		const value = this.tokens.length ? this.filterChain() : null
+		if (this.tokens.length !== 0) {
+			this.throwError("is an unexpected token", this.tokens[0])
+		}
 		return value
 	}
 
@@ -481,7 +492,6 @@ function isStateless ($filter, filterName) {
 function findConstantAndWatchExpressions (ast, $filter) {
 	let allConstants
 	let argsToWatch
-	let isStatelessFilter
 	switch (ast.type) {
 		case AST.Program:
 			allConstants = true
@@ -514,9 +524,9 @@ function findConstantAndWatchExpressions (ast, $filter) {
 			break
 		case AST.ConditionalExpression:
 			findConstantAndWatchExpressions(ast.test, $filter)
-			findConstantAndWatchExpressions(ast.alternate, $filter)
 			findConstantAndWatchExpressions(ast.consequent, $filter)
-			ast.constant = ast.test.constant && ast.alternate.constant && ast.consequent.constant
+			findConstantAndWatchExpressions(ast.alternate, $filter)
+			ast.constant = ast.test.constant && ast.consequent.constant && ast.alternate.constant
 			ast.toWatch = ast.constant ? [] : [ast]
 			break
 		case AST.Identifier:
@@ -612,10 +622,13 @@ function isAssignable (ast) {
 }
 
 function assignableAST (ast) {
-	if (ast.body.length === 1 && isAssignable(ast.body[0].expression)) {
+	const exprAst = ast && ast.type === AST.Program && ast.body.length === 1
+		? ast.body[0].expression
+		: ast
+	if (exprAst && isAssignable(exprAst)) {
 		return {
 			type: AST.AssignmentExpression,
-			left: ast.body[0].expression,
+			left: exprAst,
 			right: { type: AST.NGValueParameter },
 			operator: "="
 		}
@@ -623,17 +636,29 @@ function assignableAST (ast) {
 }
 
 function isLiteral (ast) {
-	return (
-		ast.body.length === 0 ||
-		(ast.body.length === 1 &&
-			(ast.body[0].expression.type === AST.Literal ||
-				ast.body[0].expression.type === AST.ArrayExpression ||
-				ast.body[0].expression.type === AST.ObjectExpression))
-	)
+	return ast.type === AST.Program
+		? (
+			ast.body.length === 0 ||
+			(ast.body.length === 1 &&
+				(ast.body[0].expression.type === AST.Literal ||
+					ast.body[0].expression.type === AST.ArrayExpression ||
+					ast.body[0].expression.type === AST.ObjectExpression))
+		)
+		: (
+			ast.type === AST.Literal ||
+			ast.type === AST.ArrayExpression ||
+			ast.type === AST.ObjectExpression
+		)
 }
 
 function isConstant (ast) {
 	return ast.constant
+}
+
+function append(builder, str) {
+	if (str) {
+		builder.push(str)
+	}
 }
 
 class ASTCompiler {
@@ -647,7 +672,7 @@ class ASTCompiler {
 
 	compile (expression) {
 		const self = this
-		const ast = this.astBuilder.ast(expression)
+		const ast = this.astBuilder.ast_expr(expression)
 		this.state = {
 			nextId: 0,
 			filters: {},
@@ -655,55 +680,67 @@ class ASTCompiler {
 			assign: { vars: [], body: [], own: {} },
 			inputs: []
 		}
-		findConstantAndWatchExpressions(ast, self.$filter)
 		let extra = ""
-		let assignable
-		this.stage = "assign"
-		if ((assignable = assignableAST(ast))) {
-			this.state.computing = "assign"
-			const result = this.nextId()
-			this.recurse(assignable, result)
-			this.return_(result)
-			extra = "fn.assign=" + this.generateFunction("assign", "s,v,l")
-		}
-		const toWatch = getInputs(ast.body)
-		self.stage = "inputs"
-		if (toWatch) {
-			toWatch.forEach((watch, key) => {
-				const fnKey = "fn" + key
-				self.state[fnKey] = { vars: [], body: [], own: {} }
-				self.state.computing = fnKey
-				const intoId = self.nextId()
-				self.recurse(watch, intoId)
-				self.return_(intoId)
-				self.state.inputs.push(fnKey)
-				watch.watchId = key
-			})
+		if (ast) {
+			findConstantAndWatchExpressions(ast, self.$filter)
+			// let assignable
+			// this.stage = "assign"
+			// if ((assignable = assignableAST(ast))) {
+			// 	this.state.computing = "assign"
+			// 	const result = this.nextId()
+			// 	this.recurse(assignable, result)
+			// 	this.return_(result)
+			// 	extra = "fn.assign=" + this.generateFunction("assign", "s,v,l")
+			// }
+			// const toWatch = getInputs(ast.body)
+			// self.stage = "inputs"
+			// if (toWatch) {
+			// 	toWatch.forEach((watch, key) => {
+			// 		const fnKey = "fn" + key
+			// 		self.state[fnKey] = { vars: [], body: [], own: {} }
+			// 		self.state.computing = fnKey
+			// 		const intoId = self.nextId()
+			// 		self.recurse(watch, intoId)
+			// 		self.return_(intoId)
+			// 		self.state.inputs.push(fnKey)
+			// 		watch.watchId = key
+			// 	})
+			// }
 		}
 		this.state.computing = "fn"
 		this.stage = "main"
-		this.recurse(ast)
+		if (ast) {
+			// wrap AST in program body (if necessary) because that's what the compiler expects
+			if (ast.type === AST.Program) {
+				this.recurse(ast)
+			} else {
+				this.recurse({ type: AST.Program, body: [{ type: AST.ExpressionStatement, expression: ast }] })
+			}
+		}
 		// The build and minification steps remove the string "use strict" from the code, but this is done using a regex.
 		// This is a workaround for this until we do a better job at only removing the prefix only when we should.
-		const fnString = `"${this.USE} ${this.STRICT}"
-${this.filterPrefix()}
-var fn=${this.generateFunction("fn", "s,l,a,i")}
-${extra}
-${this.watchFns()}
-return fn`
+		const fns = []
+		append(fns, `"${this.USE} ${this.STRICT}"`)
+		append(fns, this.filterPrefix())
+		append(fns, `var fn=${this.generateFunction("fn", "s,l,a,i")}`)
+		append(fns, extra)
+		append(fns, this.watchFns())
+		append(fns, 'return fn')
 		// eslint-disable-next-line no-new-func
 		const fn = new Function(
 			"$filter",
 			"getStringValue",
 			"ifDefined",
 			"plus",
-			fnString
+			fns.join('\n')
 		)(this.$filter, getStringValue, ifDefined, plusFn)
 
 		this.state = this.stage = undefined
 		fn.ast = ast
-		fn.literal = isLiteral(ast)
-		fn.constant = isConstant(ast)
+		if (ast) {
+			fn.literal = isLiteral(ast)
+			fn.constant = isConstant(ast)
+		}
 		return fn
 	}
 
@@ -1203,31 +1240,40 @@ class ASTInterpreter {
 
 	compile (expression) {
 		const self = this
-		const ast = this.astBuilder.ast(expression)
-		findConstantAndWatchExpressions(ast, self.$filter)
-		let assignable
-		let assign
-		if ((assignable = assignableAST(ast))) {
-			assign = this.recurse(assignable)
-		}
-		const toWatch = getInputs(ast.body)
-		let inputs
-		if (toWatch) {
-			inputs = []
-			toWatch.forEach((watch, key) => {
-				const input = self.recurse(watch)
-				watch.input = input
-				inputs.push(input)
-				watch.watchId = key
-			})
-		}
+		const ast = this.astBuilder.ast_expr(expression)
 		const expressions = []
-		ast.body.forEach(expression => {
+		const astProg = ast && ast.type === AST.Program
+		  ? ast
+			: { type: AST.Program, body: (
+				ast
+					? [{ type: AST.ExpressionStatement, expression: ast }]
+					: []
+			) }
+		if (ast) {
+			findConstantAndWatchExpressions(ast, self.$filter)
+			// let assignable
+			// let assign
+			// if ((assignable = assignableAST(ast))) {
+			// 	assign = this.recurse(assignable)
+			// }
+		}
+		// const toWatch = getInputs(astProg.body)
+		// let inputs
+		// if (toWatch) {
+		// 	inputs = []
+		// 	toWatch.forEach((watch, key) => {
+		// 		const input = self.recurse(watch)
+		// 		watch.winput = input
+		// 		inputs.push(input)
+		// 		watch.watchId = key
+		// 	})
+		// }
+		astProg.body.forEach(expression => {
 			expressions.push(self.recurse(expression.expression))
 		})
-		const fn = ast.body.length === 0
+		const fn = astProg.body.length === 0
 			? noop
-			: ast.body.length === 1
+			: astProg.body.length === 1
 				? expressions[0]
 				: function (scope, locals) {
 					let lastValue;
@@ -1236,17 +1282,19 @@ class ASTInterpreter {
 					})
 					return lastValue
 				}
-		if (assign) {
-			fn.assign = function (scope, value, locals) {
-				return assign(scope, locals, value)
-			}
-		}
-		if (inputs) {
-			fn.inputs = inputs
-		}
+		// if (assign) {
+		// 	fn.assign = function (scope, value, locals) {
+		// 		return assign(scope, locals, value)
+		// 	}
+		// }
+		// if (inputs) {
+		// 	fn.inputs = inputs
+		// }
 		fn.ast = ast
-		fn.literal = isLiteral(ast)
-		fn.constant = isConstant(ast)
+		if (ast) {
+			fn.literal = isLiteral(ast)
+			fn.constant = isConstant(ast)
+		}
 		return fn
 	}
 
@@ -1255,8 +1303,8 @@ class ASTInterpreter {
 		let left,
 			right,
 			args
-		if (ast.input) {
-			return this.inputs(ast.input, ast.watchId)
+		if (ast.winput) {
+			return this.inputs(ast.winput, ast.watchId)
 		}
 		switch (ast.type) {
 			case AST.Literal:
@@ -1275,8 +1323,8 @@ class ASTInterpreter {
 			case AST.ConditionalExpression:
 				return this["ternary?:"](
 					this.recurse(ast.test),
-					this.recurse(ast.alternate),
 					this.recurse(ast.consequent),
+					this.recurse(ast.alternate),
 					context
 				)
 			case AST.Identifier:
@@ -1292,7 +1340,7 @@ class ASTInterpreter {
 					: this.nonComputedMember(left, right, context, create)
 			case AST.CallExpression:
 				args = []
-				forEach(ast.arguments, function(expr) {
+				ast.arguments.forEach(expr => {
 					args.push(self.recurse(expr))
 				})
 				right = this.recurse(ast.callee, true)
@@ -1311,7 +1359,7 @@ class ASTInterpreter {
 			case AST.FilterExpression:
 				args = []
 				args.push(self.recurse(ast.input))
-				forEach(ast.arguments, function(expr) {
+				ast.arguments.forEach(expr => {
 					args.push(self.recurse(expr))
 				})
 				right = this.$filter(ast.filter.name)
@@ -1533,11 +1581,11 @@ class ASTInterpreter {
 		}
 	}
 
-	"ternary?:" (test, alternate, consequent, context) {
+	"ternary?:" (test, consequent, alternate, context) {
 		return function (scope, locals, assign, inputs) {
 			const arg = test(scope, locals, assign, inputs)
-				? alternate(scope, locals, assign, inputs)
-				: consequent(scope, locals, assign, inputs)
+				? consequent(scope, locals, assign, inputs)
+				: alternate(scope, locals, assign, inputs)
 			return context ? { value: arg } : arg
 		}
 	}

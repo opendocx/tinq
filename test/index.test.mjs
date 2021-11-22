@@ -362,41 +362,41 @@ describe("expressions", function() {
 			});
 		});
 
-		describe("for assigning values", function() {
-			beforeEach(function() {
-				scope = {};
-			});
+		// describe("for assigning values", function() {
+		// 	beforeEach(function() {
+		// 		scope = {};
+		// 	});
 
-			it("should expose an 'assign'-function", function() {
-				var fn = compile("a");
+		// 	it("should expose an 'assign'-function", function() {
+		// 		var fn = compile("a");
 
-				expect(fn.assign).to.be.a("function");
-				fn.assign(scope, 123);
-				expect(scope.a).to.equal(123);
-			});
+		// 		expect(fn.assign).to.be.a("function");
+		// 		fn.assign(scope, 123);
+		// 		expect(scope.a).to.equal(123);
+		// 	});
 
-			describe("the 'assign'-function", function() {
-				it("should work for expressions ending with brackets", function() {
-					var fn = compile("a.b['c']");
+		// 	describe("the 'assign'-function", function() {
+		// 		it("should work for expressions ending with brackets", function() {
+		// 			var fn = compile("a.b['c']");
 
-					fn.assign(scope, 123);
-					expect(scope.a.b.c).to.equal(123);
-				});
+		// 			fn.assign(scope, 123);
+		// 			expect(scope.a.b.c).to.equal(123);
+		// 		});
 
-				it("should work for expressions with brackets in the middle", function() {
-					var fn = compile('a["b"].c');
+		// 		it("should work for expressions with brackets in the middle", function() {
+		// 			var fn = compile('a["b"].c');
 
-					fn.assign(scope, 123);
-					expect(scope.a.b.c).to.equal(123);
-				});
+		// 			fn.assign(scope, 123);
+		// 			expect(scope.a.b.c).to.equal(123);
+		// 		});
 
-				it("should return the result of the assignment", function() {
-					var fn = compile('a["b"].c');
+		// 		it("should return the result of the assignment", function() {
+		// 			var fn = compile('a["b"].c');
 
-					expect(fn.assign(scope, 123)).to.equal(123);
-				});
-			});
-		});
+		// 			expect(fn.assign(scope, 123)).to.equal(123);
+		// 		});
+		// 	});
+		// });
 
 		describe(".cache", function() {
 			it("should be an object by default", function() {

@@ -5,7 +5,7 @@ import { Parser } from './parser.mjs';
 export { Lexer, Parser }
 
 const parserOptions = {
-	csp: false, // csp == true uses interpreter instead of compiler
+	csp: false, // csp == true uses interpreter instead of compiler (interesting for test/debug, but otherwise why?)
 	expensiveChecks: true,
 	includeLocation: true,
 	literals: {
