@@ -135,6 +135,8 @@ function ordsuffix (input) {
   if (input === null || typeof input === 'undefined') return input
   if (typeof input !== 'number') input = Number(input)
   if (!isFinite(input)) return null
+  // English-language exception for 11th, 12th, 13th, 111th, 112th, 113th, 211th, 212th, 213th, etc.
+  if (~~(input % 100 / 10) === 1) return 'th'
   switch (input % 10) {
     case 1: return 'st'
     case 2: return 'nd'
