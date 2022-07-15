@@ -4,7 +4,7 @@
   "description": "YATTE Expression Evaluation",
   "main": "./src/index.mjs",
   "scripts": {
-    "test": "mocha test/index.test.mjs -R spec",
+    "test": "mocha test/*.test.mjs -R spec",
     "test2": "nyc --reporter=lcov --reporter=text-summary mocha"
   },
   "author": {
