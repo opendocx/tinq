@@ -1,4 +1,4 @@
-import { isDefined, isString, isNumber, getStringValue, noop } from "./utils.mjs";
+import { isDefined, isString, isNumber, getStringValue, ifDefined, plusFn, noop } from "./utils.mjs";
 import filters from "./filters.mjs"
 
 export class Parser {
@@ -473,16 +473,6 @@ AST.ListFilterExpression = "ListFilterExpression"
 
 // Internal use only
 AST.NGValueParameter = "NGValueParameter"
-
-function ifDefined (v, d) {
-	return typeof v !== "undefined" ? v : d
-}
-
-function plusFn (l, r) {
-	if (typeof l === "undefined") return r
-	if (typeof r === "undefined") return l
-	return l + r
-}
 
 function isStateless ($filter, filterName) {
 	const fn = $filter(filterName)

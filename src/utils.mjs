@@ -127,6 +127,16 @@ export function getStringValue(name) {
 	return name + "";
 }
 
+export function ifDefined (v, d) {
+	return typeof v !== "undefined" ? v : d
+}
+
+export function plusFn (l, r) {
+	if (typeof l === "undefined") return r
+	if (typeof r === "undefined") return l
+	return l + r
+}
+
 /**
  * A function that performs no operations. This function can be useful when writing code in the
  * functional style.
