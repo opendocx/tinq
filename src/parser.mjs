@@ -1,10 +1,13 @@
-import { isDefined, isString, isNumber, getStringValue, ifDefined, plusFn, noop } from "./utils.mjs";
+import { ASTInterpreter } from "./astinterpreter.mjs";
+import { ASTCompiler } from "./astcompiler.mjs";
+import { isAssignable } from "./utils.mjs";
 import filters from "./filters.mjs"
 
 export class Parser {
-	constructor (lexer, options) {
+	constructor (lexer, typeDict, options) {
 		this.lexer = lexer
 		this.options = options
+		this.typeDict = typeDict
 		this.$filter = function getFilter (name) {
 			return filters[name]
 		}
@@ -15,6 +18,10 @@ export class Parser {
 	}
 
 	parse (text) {
+		return this.ast.ast_expr(text)
+	}
+
+	compile (text) {
 		return this.astCompiler.compile(text)
 	}
 }
@@ -295,17 +302,26 @@ export class AST {
 		const filterIdent = this.identifier()
 		const filterFunc = filters[filterIdent.name]
 		const args = []
-		const result = {
-			type: filterFunc && filterFunc.listFilter ? AST.ListFilterExpression : AST.FilterExpression,
+		const newNode = {
+			type: AST.FilterExpression,
 			filter: filterIdent,
 			input: baseExpression,
 			arguments: args
 		}
-		if (filterFunc && filterFunc.rtlFilter) result.rtl = true
+		if (filterFunc) {
+			if (filterFunc.listFilter) newNode.listFilter = true
+			if (filterFunc.rtlFilter) newNode.rtl = true
+		}
 		while (this.expect(":")) {
 			args.push(this.expression())
 		}
-		return result
+		if (newNode.rtl && baseExpression.type === AST.FilterExpression && baseExpression.rtl) {
+			// modify filter chaining for adjacent filters with right-to-left preference
+			newNode.input = baseExpression.arguments[0]
+			baseExpression.arguments[0] = newNode
+			return baseExpression
+		} // else
+		return newNode
 	}
 
 	parseArguments () {
@@ -447,1206 +463,258 @@ export class AST {
 	}
 }
 
-AST.Program = "Program" // a template
-AST.ExpressionStatement = "ExpressionStatement" // a content field in a template
+AST.Identifier = 'Identifier'
+AST.Literal = 'Literal'
+AST.Program = 'Program' // a template
+AST.BlockStatement = 'BlockStatement' // a sequence of quasis and fields in a template
+AST.QuasiStatement = 'QuasiStatement' // a chunk of boilerplate text in a template
+AST.ExpressionStatement = 'ExpressionStatement' // a content field in a template
+AST.EmptyStatement = 'EmptyStatement' // no-op statement in a template
 AST.IfStatement = 'IfStatement' // an if/elseif/else/endif block in a template
 AST.ForOfStatement = 'ForOfStatement' // a list/endlist block in a template
-AST.BlockStatement = 'BlockStatement' // a sequence of fields in a template
-AST.EmptyStatement = 'EmptyStatement' // no-op statement in a template
-AST.AssignmentExpression = "AssignmentExpression"
-AST.ConditionalExpression = "ConditionalExpression"
-AST.LogicalExpression = "LogicalExpression"
-AST.BinaryExpression = "BinaryExpression"
-AST.UnaryExpression = "UnaryExpression"
-AST.CallExpression = "CallExpression"
-AST.MemberExpression = "MemberExpression"
-AST.Identifier = "Identifier"
-AST.Literal = "Literal"
-AST.ArrayExpression = "ArrayExpression"
-AST.Property = "Property"
-AST.ObjectExpression = "ObjectExpression"
-AST.ThisExpression = "ThisExpression"
-// Non-standard
-AST.LocalsExpression = "LocalsExpression"
-AST.FilterExpression = "FilterExpression"
-AST.ListFilterExpression = "ListFilterExpression"
-
+AST.ThisExpression = 'ThisExpression'
+AST.ArrayExpression = 'ArrayExpression'
+AST.ObjectExpression = 'ObjectExpression'
+AST.Property = 'Property'
+AST.UnaryExpression = 'UnaryExpression'
+AST.BinaryExpression = 'BinaryExpression'
+AST.LogicalExpression = 'LogicalExpression'
+AST.MemberExpression = 'MemberExpression'
+AST.ConditionalExpression = 'ConditionalExpression'
+AST.CallExpression = 'CallExpression'
+AST.AssignmentExpression = 'AssignmentExpression'
+// also includes some custom/proprietary node types:
+AST.LocalsExpression = 'LocalsExpression' // like 'ThisExpression', but for angular-expressions' local scope (if needed?)
+AST.FilterExpression = 'FilterExpression' // properties: rtl (bool), input (node), filter (ident), arguments (node array)
+// static methods
+AST.serialize = serializeAstNode
+AST.mutateInPlace = astMutateInPlace
 // Internal use only
-AST.NGValueParameter = "NGValueParameter"
+AST.NGValueParameter = 'NGValueParameter'
 
-function isStateless ($filter, filterName) {
-	const fn = $filter(filterName)
-	return !fn.$stateful
+// Some serialization logic adapted from AString
+// https://github.com/davidbonnet/astring/blob/master/src/astring.js
+
+const OPERATOR_PRECEDENCE = {
+  '||': 3,
+  '&&': 4,
+  '==': 8,
+  '!=': 8,
+  '===': 8,
+  '!==': 8,
+  '<': 9,
+  '>': 9,
+  '<=': 9,
+  '>=': 9,
+  '+': 11,
+  '-': 11,
+  '*': 12,
+  '%': 12,
+  '/': 12
 }
 
-function findConstantAndWatchExpressions (ast, $filter) {
-	let allConstants
-	let argsToWatch
-	switch (ast.type) {
-		case AST.Program:
-			allConstants = true
-      ast.body.forEach(expr => {
-				findConstantAndWatchExpressions(expr.expression, $filter)
-				allConstants = allConstants && expr.expression.constant
-			})
-			ast.constant = allConstants
-			break
-		case AST.Literal:
-			ast.constant = true
-			ast.toWatch = []
-			break
-		case AST.UnaryExpression:
-			findConstantAndWatchExpressions(ast.argument, $filter)
-			ast.constant = ast.argument.constant
-			ast.toWatch = ast.argument.toWatch
-			break
-		case AST.BinaryExpression:
-			findConstantAndWatchExpressions(ast.left, $filter)
-			findConstantAndWatchExpressions(ast.right, $filter)
-			ast.constant = ast.left.constant && ast.right.constant
-			ast.toWatch = ast.left.toWatch.concat(ast.right.toWatch)
-			break
-		case AST.LogicalExpression:
-			findConstantAndWatchExpressions(ast.left, $filter)
-			findConstantAndWatchExpressions(ast.right, $filter)
-			ast.constant = ast.left.constant && ast.right.constant
-			ast.toWatch = ast.constant ? [] : [ast]
-			break
-		case AST.ConditionalExpression:
-			findConstantAndWatchExpressions(ast.test, $filter)
-			findConstantAndWatchExpressions(ast.consequent, $filter)
-			findConstantAndWatchExpressions(ast.alternate, $filter)
-			ast.constant = ast.test.constant && ast.consequent.constant && ast.alternate.constant
-			ast.toWatch = ast.constant ? [] : [ast]
-			break
-		case AST.Identifier:
-			ast.constant = false
-			ast.toWatch = [ast]
-			break
-		case AST.MemberExpression:
-			findConstantAndWatchExpressions(ast.object, $filter)
-			if (ast.computed) {
-				findConstantAndWatchExpressions(ast.property, $filter)
-			}
-			ast.constant = ast.object.constant && (!ast.computed || ast.property.constant)
-			ast.toWatch = [ast]
-			break
-		case AST.CallExpression:
-			ast.arguments.forEach(expr => {
-				findConstantAndWatchExpressions(expr, $filter)
-			})
-			ast.constant = false
-			ast.toWatch = [ast]
-			break
-		case AST.FilterExpression:
-		case AST.ListFilterExpression:
-			argsToWatch = []
-			findConstantAndWatchExpressions(ast.input, $filter)
-			if (!ast.input.constant) {
-				argsToWatch.push.apply(argsToWatch, ast.input.toWatch)
-			}
-			allConstants = true
-			ast.arguments.forEach(expr => {
-				findConstantAndWatchExpressions(expr, $filter)
-				allConstants = allConstants && expr.constant
-				if (!expr.constant) {
-					argsToWatch.push.apply(argsToWatch, expr.toWatch)
-				}
-			})
-			ast.constant = allConstants
-			ast.toWatch = argsToWatch
-			break
-		case AST.AssignmentExpression:
-			findConstantAndWatchExpressions(ast.left, $filter)
-			findConstantAndWatchExpressions(ast.right, $filter)
-			ast.constant = ast.left.constant && ast.right.constant
-			ast.toWatch = [ast]
-			break
-		case AST.ArrayExpression:
-			allConstants = true
-			argsToWatch = []
-      ast.elements.forEach(expr => {
-				findConstantAndWatchExpressions(expr, $filter)
-				allConstants = allConstants && expr.constant
-				if (!expr.constant) {
-					argsToWatch.push.apply(argsToWatch, expr.toWatch)
-				}
-			})
-			ast.constant = allConstants
-			ast.toWatch = argsToWatch
-			break
-		case AST.ObjectExpression:
-			allConstants = true
-			argsToWatch = []
-      ast.properties.forEach(property => {
-				findConstantAndWatchExpressions(property.value, $filter)
-				allConstants = allConstants && property.value.constant && !property.computed
-				if (!property.value.constant) {
-					argsToWatch.push.apply(argsToWatch, property.value.toWatch)
-				}
-			})
-			ast.constant = allConstants
-			ast.toWatch = argsToWatch
-			break
-		case AST.ThisExpression:
-			ast.constant = false
-			ast.toWatch = []
-			break
-		case AST.LocalsExpression:
-			ast.constant = false
-			ast.toWatch = []
-			break
-	}
+// Enables parenthesis regardless of precedence
+const NEEDS_PARENTHESES = 18
+
+const EXPRESSIONS_PRECEDENCE = {
+  // Definitions
+  [AST.ArrayExpression]: 21,
+  [AST.ThisExpression]: 21,
+  [AST.LocalsExpression]: 21,
+  [AST.Identifier]: 21,
+  // Operations
+  [AST.MemberExpression]: 20,
+  [AST.CallExpression]: 20,
+  // Other definitions
+  [AST.Literal]: 19,
+  [AST.ObjectExpression]: NEEDS_PARENTHESES,
+  // Other operations
+  [AST.UnaryExpression]: 17,
+  [AST.BinaryExpression]: 14,
+  [AST.LogicalExpression]: 12,
+  [AST.ConditionalExpression]: 4,
+  CommaOrSequence: 1,
+  [AST.Property]: 1,
+  [AST.FilterExpression]: 0,
 }
 
-function getInputs (body) {
-	if (body.length !== 1) return
-	const lastExpression = body[0].expression
-	const candidate = lastExpression.toWatch
-	if (candidate.length !== 1) return candidate
-	return candidate[0] !== lastExpression ? candidate : undefined
-}
-
-function isAssignable (ast) {
-	return ast.type === AST.Identifier || ast.type === AST.MemberExpression
-}
-
-function assignableAST (ast) {
-	const exprAst = ast && ast.type === AST.Program && ast.body.length === 1
-		? ast.body[0].expression
-		: ast
-	if (exprAst && isAssignable(exprAst)) {
-		return {
-			type: AST.AssignmentExpression,
-			left: exprAst,
-			right: { type: AST.NGValueParameter },
-			operator: "="
-		}
-	}
-}
-
-function isLiteral (ast) {
-	return ast.type === AST.Program
-		? (
-			ast.body.length === 0 ||
-			(ast.body.length === 1 &&
-				(ast.body[0].expression.type === AST.Literal ||
-					ast.body[0].expression.type === AST.ArrayExpression ||
-					ast.body[0].expression.type === AST.ObjectExpression))
-		)
-		: (
-			ast.type === AST.Literal ||
-			ast.type === AST.ArrayExpression ||
-			ast.type === AST.ObjectExpression
-		)
-}
-
-function isConstant (ast) {
-	return ast.constant
-}
-
-function append(builder, str) {
-	if (str) {
-		builder.push(str)
-	}
-}
-
-class ASTCompiler {
-  constructor (astBuilder, $filter) {
-    this.astBuilder = astBuilder
-    this.$filter = $filter
-    this.USE = "use"
-    this.STRICT = "strict"
-    this.stringEscapeRegex = /[^ a-zA-Z0-9]/g
+function astMutateInPlace (node, mutator) {
+  var nodeModified = mutator(node)
+  switch (node.type) {
+    case AST.Program:
+      return nodeModified | node.body.reduce(
+        (accumulator, statementObj) => (accumulator |= astMutateInPlace(statementObj, mutator)),
+        false
+      )
+    case AST.ExpressionStatement:
+      return nodeModified | astMutateInPlace(node.expression, mutator)
+    case AST.Literal:
+    case AST.Identifier:
+    case AST.ThisExpression:
+    case AST.LocalsExpression:
+      return nodeModified
+    case AST.MemberExpression:
+      return nodeModified | astMutateInPlace(node.object, mutator) | astMutateInPlace(node.property, mutator)
+    case AST.CallExpression:
+      return nodeModified | astMutateInPlace(node.callee, mutator) | node.arguments.reduce(
+        (accumulator, argObj) => (accumulator |= astMutateInPlace(argObj, mutator)),
+        false
+      )
+    case AST.FilterExpression:
+      return nodeModified | astMutateInPlace(node.filter, mutator)
+        | astMutateInPlace(node.input, mutator) | node.arguments.reduce(
+        (accumulator, argObj) => (accumulator |= astMutateInPlace(argObj, mutator)),
+        false
+      )
+    case AST.ArrayExpression:
+      return nodeModified | node.elements.reduce(
+        (accumulator, elem) => (accumulator |= astMutateInPlace(elem, mutator)),
+        false
+      )
+    case AST.ObjectExpression:
+      return nodeModified | node.properties.reduce(
+        (accumulator, prop) => (accumulator |= astMutateInPlace(prop, mutator)),
+        false
+      )
+    case AST.Property:
+      return nodeModified | astMutateInPlace(node.key, mutator) | astMutateInPlace(node.value, mutator)
+    case AST.BinaryExpression:
+    case AST.LogicalExpression:
+      return nodeModified | astMutateInPlace(node.left, mutator) | astMutateInPlace(node.right, mutator)
+    case AST.UnaryExpression:
+      return nodeModified | astMutateInPlace(node.argument, mutator)
+    case AST.ConditionalExpression:
+      return nodeModified | astMutateInPlace(node.test, mutator) | astMutateInPlace(node.consequent, mutator)
+        | astMutateInPlace(node.alternate, mutator)
+    default:
+      return false
   }
-
-	compile (expression) {
-		const self = this
-		const ast = this.astBuilder.ast_expr(expression)
-		this.state = {
-			nextId: 0,
-			filters: {},
-			fn: { vars: [], body: [], own: {} },
-			assign: { vars: [], body: [], own: {} },
-			inputs: []
-		}
-		let extra = ""
-		if (ast) {
-			findConstantAndWatchExpressions(ast, self.$filter)
-			// let assignable
-			// this.stage = "assign"
-			// if ((assignable = assignableAST(ast))) {
-			// 	this.state.computing = "assign"
-			// 	const result = this.nextId()
-			// 	this.recurse(assignable, result)
-			// 	this.return_(result)
-			// 	extra = "fn.assign=" + this.generateFunction("assign", "s,v,l")
-			// }
-			// const toWatch = getInputs(ast.body)
-			// self.stage = "inputs"
-			// if (toWatch) {
-			// 	toWatch.forEach((watch, key) => {
-			// 		const fnKey = "fn" + key
-			// 		self.state[fnKey] = { vars: [], body: [], own: {} }
-			// 		self.state.computing = fnKey
-			// 		const intoId = self.nextId()
-			// 		self.recurse(watch, intoId)
-			// 		self.return_(intoId)
-			// 		self.state.inputs.push(fnKey)
-			// 		watch.watchId = key
-			// 	})
-			// }
-		}
-		this.state.computing = "fn"
-		this.stage = "main"
-		if (ast) {
-			// wrap AST in program body (if necessary) because that's what the compiler expects
-			if (ast.type === AST.Program) {
-				this.recurse(ast)
-			} else {
-				this.recurse({ type: AST.Program, body: [{ type: AST.ExpressionStatement, expression: ast }] })
-			}
-		}
-		// The build and minification steps remove the string "use strict" from the code, but this is done using a regex.
-		// This is a workaround for this until we do a better job at only removing the prefix only when we should.
-		const fns = []
-		append(fns, `"${this.USE} ${this.STRICT}"`)
-		append(fns, this.filterPrefix())
-		append(fns, `var fn=${this.generateFunction("fn", "s,l,a,i")}`)
-		append(fns, extra)
-		append(fns, this.watchFns())
-		append(fns, 'return fn')
-		// eslint-disable-next-line no-new-func
-		const fn = new Function(
-			"$filter",
-			"getStringValue",
-			"ifDefined",
-			"plus",
-			fns.join('\n')
-		)(this.$filter, getStringValue, ifDefined, plusFn)
-
-		this.state = this.stage = undefined
-		fn.ast = ast
-		if (ast) {
-			fn.literal = isLiteral(ast)
-			fn.constant = isConstant(ast)
-		}
-		return fn
-	}
-
-	watchFns () {
-		const result = []
-		const fns = this.state.inputs
-		const self = this
-		fns.forEach(name => {
-			result.push(`var ${name}=${self.generateFunction(name, "s")}`)
-		})
-		if (fns.length) {
-			result.push(`fn.inputs=[${fns.join(",")}];`)
-		}
-		return result.join("")
-	}
-
-	generateFunction (name, params) {
-		return `function(${params}){${this.varsPrefix(name)}${this.body(name)}};`
-	}
-
-	filterPrefix () {
-		const parts = []
-		const self = this
-		for (const [filter, id] of Object.entries(this.state.filters)) {
-			parts.push(id + "=$filter(" + self.escape(filter) + ")")
-		}
-		if (parts.length) return `var ${parts.join(",")};`
-		return ""
-	}
-
-	varsPrefix (section) {
-		return this.state[section].vars.length
-			? `var ${this.state[section].vars.join(",")};`
-			: ""
-	}
-
-	body (section) {
-		return this.state[section].body.join("")
-	}
-
-	recurse (
-		ast,
-		intoId,
-		nameId,
-		recursionFn,
-		create,
-		skipWatchIdCheck
-	) {
-		const self = this
-		let left,
-			right,
-			args,
-			expression
-		recursionFn = recursionFn || noop
-		if (!skipWatchIdCheck && isDefined(ast.watchId)) {
-			intoId = intoId || this.nextId()
-			this.if_(
-				"i",
-				this.lazyAssign(intoId, this.computedMember("i", ast.watchId)),
-				this.lazyRecurse(ast, intoId, nameId, recursionFn, create, true)
-			)
-			return
-		}
-		switch (ast.type) {
-			case AST.Program:
-				ast.body.forEach((expression, pos) => {
-					self.recurse(expression.expression, undefined, undefined, function (expr) {
-						right = expr
-					})
-					if (pos !== ast.body.length - 1) {
-						self.current().body.push(right, ";")
-					} else {
-						self.return_(right)
-					}
-				})
-				break
-			case AST.Literal:
-				expression = this.escape(ast.value)
-				this.assign(intoId, expression)
-				recursionFn(intoId || expression)
-				break
-			case AST.UnaryExpression:
-				this.recurse(ast.argument, undefined, undefined, function(expr) {
-					right = expr
-				})
-				expression = ast.operator + "(" + this.ifDefined(right, 0) + ")"
-				this.assign(intoId, expression)
-				recursionFn(expression)
-				break
-			case AST.BinaryExpression:
-				this.recurse(ast.left, undefined, undefined, function(expr) {
-					left = expr
-				})
-				this.recurse(ast.right, undefined, undefined, function(expr) {
-					right = expr
-				})
-				if (ast.operator === "+") {
-					expression = this.plus(left, right)
-				} else if (ast.operator === "-") {
-					expression = this.ifDefined(left, 0) + ast.operator + this.ifDefined(right, 0)
-				} else {
-					expression = "(" + left + ")" + ast.operator + "(" + right + ")"
-				}
-				this.assign(intoId, expression)
-				recursionFn(expression)
-				break
-			case AST.LogicalExpression:
-				intoId = intoId || this.nextId()
-				self.recurse(ast.left, intoId)
-				self.if_(
-					ast.operator === "&&" ? intoId : self.not(intoId),
-					self.lazyRecurse(ast.right, intoId)
-				)
-				recursionFn(intoId)
-				break
-			case AST.ConditionalExpression:
-				intoId = intoId || this.nextId()
-				self.recurse(ast.test, intoId)
-				self.if_(
-					intoId,
-					self.lazyRecurse(ast.consequent, intoId),
-					self.lazyRecurse(ast.alternate, intoId),
-				)
-				recursionFn(intoId)
-				break
-			case AST.Identifier:
-				intoId = intoId || this.nextId()
-				if (nameId) {
-					nameId.context =
-						self.stage === "inputs"
-							? "s"
-							: this.assign(
-									this.nextId(),
-									this.getHasOwnProperty("l", ast.name) + "?l:s"
-							  )
-					nameId.computed = false
-					nameId.name = ast.name
-				}
-				self.if_(
-					self.stage === "inputs" ||
-						self.not(self.getHasOwnProperty("l", ast.name)),
-					function () {
-						self.if_(
-							self.stage === "inputs" ||
-								"s",
-							function() {
-								if (create && create !== 1) {
-									self.if_(
-										self.isNull(self.nonComputedMember("s", ast.name)),
-										self.lazyAssign(self.nonComputedMember("s", ast.name), "{}")
-									)
-								}
-								self.assign(intoId, self.nonComputedMember("s", ast.name))
-							}
-						)
-					},
-					intoId &&
-						self.lazyAssign(intoId, self.nonComputedMember("l", ast.name))
-				)
-				recursionFn(intoId)
-				break
-			case AST.MemberExpression:
-				left = (nameId && (nameId.context = this.nextId())) || this.nextId()
-				intoId = intoId || this.nextId()
-				self.recurse(
-					ast.object,
-					left,
-					undefined,
-					function () {
-						let member = null
-						if (ast.computed) {
-							right = self.nextId()
-							member = self.computedMember(left, right)
-						} else {
-							member = self.nonComputedMember(left, ast.property.name)
-							right = ast.property.name
-						}
-						self.if_(
-							self.notNull(left),
-							function () {
-								if (ast.computed) {
-									self.recurse(ast.property, right)
-									self.getStringValue(right)
-									if (create && create !== 1) {
-										self.if_(self.not(member), self.lazyAssign(member, "{}"))
-									}
-									self.assign(intoId, member)
-									if (nameId) {
-										nameId.computed = true
-										nameId.name = right
-									}
-								} else {
-									if (create && create !== 1) {
-										self.if_(
-											self.isNull(member),
-											self.lazyAssign(member, "{}")
-										)
-									}
-									self.assign(intoId, member)
-									if (nameId) {
-										nameId.computed = false
-										nameId.name = ast.property.name
-									}
-								}
-							},
-							function () {
-								self.assign(intoId, "undefined")
-							}
-						)
-						recursionFn(intoId)
-					},
-					!!create
-				)
-				break
-			case AST.CallExpression:
-				intoId = intoId || this.nextId()
-				right = self.nextId()
-				left = {}
-				args = []
-				self.recurse(ast.callee, right, left, function () {
-					self.if_(
-						self.notNull(right),
-						function () {
-							ast.arguments.forEach(expr => {
-								self.recurse(
-									expr,
-									ast.constant ? undefined : self.nextId(),
-									undefined,
-									function (argument) {
-										args.push(argument)
-									}
-								)
-							})
-							if (left.name) {
-								expression =
-									self.member(left.context, left.name, left.computed) +
-									"(" + args.join(",") + ")"
-							} else {
-								expression = right + "(" + args.join(",") + ")"
-							}
-							self.assign(intoId, expression)
-						},
-						function () {
-							self.assign(intoId, "undefined")
-						}
-					)
-					recursionFn(intoId)
-				})
-				break
-			case AST.FilterExpression:
-				intoId = intoId || this.nextId()
-				right = self.filter(ast.filter.name)
-				args = []
-				left = self.nextId()
-				self.recurse(ast.input, left)
-				args.push(left)
-				ast.arguments.forEach(expr => {
-					const argument = self.nextId()
-					self.recurse(expr, argument)
-					args.push(argument)
-				})
-				expression = right + "(" + args.join(",") + ")"
-				self.assign(intoId, expression)
-				recursionFn(intoId)
-				break
-			case AST.ListFilterExpression:
-				throw new Error("Not Implemented")
-				break
-			case AST.AssignmentExpression:
-				right = this.nextId()
-				left = {}
-				this.recurse(
-					ast.left,
-					undefined,
-					left,
-					function () {
-						self.if_(
-							self.notNull(left.context),
-							function () {
-								self.recurse(ast.right, right)
-								expression =
-									self.member(left.context, left.name, left.computed) +
-									ast.operator +
-									right
-								self.assign(intoId, expression)
-								recursionFn(intoId || expression)
-							}
-						)
-					},
-					1
-				)
-				break
-			case AST.ArrayExpression:
-				args = []
-				ast.elements.forEach(expr => {
-					self.recurse(
-						expr,
-						ast.constant ? undefined : self.nextId(),
-						undefined,
-						function (argument) {
-							args.push(argument)
-						}
-					)
-				})
-				expression = "[" + args.join(",") + "]"
-				this.assign(intoId, expression)
-				recursionFn(intoId || expression)
-				break
-			case AST.ObjectExpression:
-				args = []
-				if (ast.properties.some(property => property.computed)) {
-					intoId = intoId || this.nextId()
-					this.assign(intoId, "{}")
-					ast.properties.forEach(property => {
-						if (property.computed) {
-							left = self.nextId()
-							self.recurse(property.key, left)
-						} else {
-							left = property.key.type === AST.Identifier ? property.key.name : "" + property.key.value
-						}
-						right = self.nextId()
-						self.recurse(property.value, right)
-						self.assign(self.member(intoId, left, property.computed), right)
-					})
-				} else {
-					ast.properties.forEach(property => {
-						self.recurse(
-							property.value,
-							ast.constant ? undefined : self.nextId(),
-							undefined,
-							function (expr) {
-								args.push(
-									self.escape(property.key.type === AST.Identifier ? property.key.name : "" + property.key.value )
-									  + ":" + expr
-								)
-							}
-						)
-					})
-					expression = "{" + args.join(",") + "}"
-					this.assign(intoId, expression)
-				}
-				recursionFn(intoId || expression)
-				break
-			case AST.ThisExpression:
-				this.assign(intoId, "s")
-				recursionFn(intoId || "s")
-				break
-			case AST.LocalsExpression:
-				this.assign(intoId, "l")
-				recursionFn(intoId || "l")
-				break
-			case AST.NGValueParameter:
-				this.assign(intoId, "v")
-				recursionFn(intoId || "v")
-				break
-		}
-	}
-
-	getHasOwnProperty (element, property) {
-		const key = element + "." + property
-		const own = this.current().own
-		if (!own.hasOwnProperty(key)) {
-			own[key] = this.nextId(
-				false,
-				element + "&&(" + this.escape(property) + " in " + element + ")"
-			)
-		}
-		return own[key]
-	}
-
-	assign (id, value) {
-		if (!id) return
-		this.current().body.push(id, "=", value, ";")
-		return id
-	}
-
-	filter (filterName) {
-		if (!this.state.filters.hasOwnProperty(filterName)) {
-			this.state.filters[filterName] = this.nextId(true)
-		}
-		return this.state.filters[filterName]
-	}
-
-	ifDefined (id, defaultValue) {
-		return "ifDefined(" + id + "," + this.escape(defaultValue) + ")"
-	}
-
-	plus (left, right) {
-		return "plus(" + left + "," + right + ")"
-	}
-
-	return_ (id) {
-		this.current().body.push("return ", id, ";")
-	}
-
-	if_ (test, consequent, alternate) {
-		if (test === true) {
-			consequent()
-		} else {
-			const body = this.current().body
-			body.push("if(", test, "){")
-			consequent()
-			body.push("}")
-			if (alternate) {
-				body.push("else{")
-				alternate()
-				body.push("}")
-			}
-		}
-	}
-
-	not (expression) {
-		return "!(" + expression + ")"
-	}
-
-	isNull (expression) {
-		return expression + "==null"
-	}
-
-	notNull (expression) {
-		return expression + "!=null"
-	}
-
-	nonComputedMember (left, right) {
-		const SAFE_IDENTIFIER = /^[$_a-zA-Z][$_a-zA-Z0-9]*$/
-		const UNSAFE_CHARACTERS = /[^$_a-zA-Z0-9]/g
-		let expr = ""
-		if (SAFE_IDENTIFIER.test(right)) {
-			expr = left + "." + right
-		} else {
-			right = right.replace(UNSAFE_CHARACTERS, this.stringEscapeFn)
-			expr = left + '["' + right + '"]'
-		}
-		return expr
-	}
-
-	computedMember (left, right) {
-		return left + "[" + right + "]"
-	}
-
-	member (left, right, computed) {
-		if (computed) return this.computedMember(left, right)
-		return this.nonComputedMember(left, right)
-	}
-
-	getStringValue (item) {
-		this.assign(item, "getStringValue(" + item + ")")
-	}
-
-	lazyRecurse (ast, intoId, nameId, recursionFn, create, skipWatchIdCheck) {
-		const self = this
-		return function () {
-			self.recurse(ast, intoId, nameId, recursionFn, create, skipWatchIdCheck)
-		}
-	}
-
-	lazyAssign (id, value) {
-		const self = this;
-		return function () {
-			self.assign(id, value)
-		}
-	}
-
-	stringEscapeFn (c) {
-		return "\\u" + ("0000" + c.charCodeAt(0).toString(16)).slice(-4)
-	}
-
-	escape (value) {
-		if (isString(value))
-			return "'" + value.replace(this.stringEscapeRegex, this.stringEscapeFn) + "'"
-		if (isNumber(value)) return value.toString()
-		if (value === true) return "true"
-		if (value === false) return "false"
-		if (value === null) return "null"
-		if (typeof value === "undefined") return "undefined"
-		throw new Error("IMPOSSIBLE")
-	}
-
-	nextId (skip, init) {
-		const id = "v" + this.state.nextId++
-		if (!skip) {
-			this.current().vars.push(id + (init ? "=" + init : ""))
-		}
-		return id
-	}
-
-	current () {
-		return this.state[this.state.computing]
-	}
 }
 
-class ASTInterpreter {
-	constructor (astBuilder, $filter) {
-		this.astBuilder = astBuilder
-		this.$filter = $filter
-	}
+function getExpressionPrecedence (node) {
+  return EXPRESSIONS_PRECEDENCE[node.type]
+}
 
-	compile (expression) {
-		const self = this
-		const ast = this.astBuilder.ast_expr(expression)
-		const expressions = []
-		const astProg = ast && ast.type === AST.Program
-		  ? ast
-			: { type: AST.Program, body: (
-				ast
-					? [{ type: AST.ExpressionStatement, expression: ast }]
-					: []
-			) }
-		if (ast) {
-			findConstantAndWatchExpressions(ast, self.$filter)
-			// let assignable
-			// let assign
-			// if ((assignable = assignableAST(ast))) {
-			// 	assign = this.recurse(assignable)
-			// }
-		}
-		// const toWatch = getInputs(astProg.body)
-		// let inputs
-		// if (toWatch) {
-		// 	inputs = []
-		// 	toWatch.forEach((watch, key) => {
-		// 		const input = self.recurse(watch)
-		// 		watch.winput = input
-		// 		inputs.push(input)
-		// 		watch.watchId = key
-		// 	})
-		// }
-		astProg.body.forEach(expression => {
-			expressions.push(self.recurse(expression.expression))
-		})
-		const fn = astProg.body.length === 0
-			? noop
-			: astProg.body.length === 1
-				? expressions[0]
-				: function (scope, locals) {
-					let lastValue;
-					expressions.forEach(exp => {
-						lastValue = exp(scope, locals)
-					})
-					return lastValue
-				}
-		// if (assign) {
-		// 	fn.assign = function (scope, value, locals) {
-		// 		return assign(scope, locals, value)
-		// 	}
-		// }
-		// if (inputs) {
-		// 	fn.inputs = inputs
-		// }
-		fn.ast = ast
-		if (ast) {
-			fn.literal = isLiteral(ast)
-			fn.constant = isConstant(ast)
-		}
-		return fn
-	}
+function expressionNeedsParentheses (node, parentNode, isRightHand) {
+  const nodePrecedence = getExpressionPrecedence(node)
+  if (nodePrecedence === NEEDS_PARENTHESES) {
+    return true
+  }
+  const parentNodePrecedence = getExpressionPrecedence(parentNode)
+  if (nodePrecedence !== parentNodePrecedence) {
+    // Different node types
+    return nodePrecedence < parentNodePrecedence
+  }
+  if (nodePrecedence !== EXPRESSIONS_PRECEDENCE.LogicalExpression
+    && nodePrecedence !== EXPRESSIONS_PRECEDENCE.BinaryExpression) {
+    return false
+  }
+  if (isRightHand) {
+    // Parenthesis are used if both operators have the same precedence
+    return (OPERATOR_PRECEDENCE[node.operator] <= OPERATOR_PRECEDENCE[parentNode.operator])
+  }
+  return (OPERATOR_PRECEDENCE[node.operator] < OPERATOR_PRECEDENCE[parentNode.operator])
+}
 
-	recurse (ast, context, create) {
-		const self = this
-		let left,
-			right,
-			args
-		if (ast.winput) {
-			return this.inputs(ast.winput, ast.watchId)
-		}
-		switch (ast.type) {
-			case AST.Literal:
-				return this.value(ast.value, context)
-			case AST.UnaryExpression:
-				right = this.recurse(ast.argument)
-				return this["unary" + ast.operator](right, context)
-			case AST.BinaryExpression:
-				left = this.recurse(ast.left)
-				right = this.recurse(ast.right)
-				return this["binary" + ast.operator](left, right, context)
-			case AST.LogicalExpression:
-				left = this.recurse(ast.left)
-				right = this.recurse(ast.right)
-				return this["binary" + ast.operator](left, right, context)
-			case AST.ConditionalExpression:
-				return this["ternary?:"](
-					this.recurse(ast.test),
-					this.recurse(ast.consequent),
-					this.recurse(ast.alternate),
-					context
-				)
-			case AST.Identifier:
-				return self.identifier(ast.name, context, create)
-			case AST.MemberExpression:
-				left = this.recurse(ast.object, false, !!create)
-				if (!ast.computed) {
-					right = ast.property.name
-				}
-				if (ast.computed) right = this.recurse(ast.property)
-				return ast.computed
-					? this.computedMember(left, right, context, create)
-					: this.nonComputedMember(left, right, context, create)
-			case AST.CallExpression:
-				args = []
-				ast.arguments.forEach(expr => {
-					args.push(self.recurse(expr))
-				})
-				right = this.recurse(ast.callee, true)
-				return function (scope, locals, assign, inputs) {
-					const rhs = right(scope, locals, assign, inputs)
-					let value
-					if (rhs.value != null) {
-						const values = []
-						for (let i = 0; i < args.length; ++i) {
-							values.push(args[i](scope, locals, assign, inputs))
-						}
-						value = rhs.value.apply(rhs.context, values)
-					}
-					return context ? { value: value } : value
-				}
-			case AST.FilterExpression:
-				args = []
-				args.push(self.recurse(ast.input))
-				ast.arguments.forEach(expr => {
-					args.push(self.recurse(expr))
-				})
-				right = this.$filter(ast.filter.name)
-				return function (scope, locals, assign, inputs) {
-					const values = []
-					for (let i = 0; i < args.length; ++i) {
-						values.push(args[i](scope, locals, assign, inputs))
-					}
-					const value = right.apply(undefined, values, inputs)
-					return context
-						? { context: undefined, name: undefined, value: value }
-						: value
-				}
-			case AST.ListFilterExpression:
-				throw new Error("Not Implemented")
-			case AST.AssignmentExpression:
-				left = this.recurse(ast.left, true, 1)
-				right = this.recurse(ast.right)
-				return function (scope, locals, assign, inputs) {
-					const lhs = left(scope, locals, assign, inputs)
-					const rhs = right(scope, locals, assign, inputs)
-					lhs.context[lhs.name] = rhs
-					return context ? { value: rhs } : rhs
-				}
-			case AST.ArrayExpression:
-				args = []
-				ast.elements.forEach(expr => {
-					args.push(self.recurse(expr))
-				})
-				return function (scope, locals, assign, inputs) {
-					const value = []
-					for (let i = 0; i < args.length; ++i) {
-						value.push(args[i](scope, locals, assign, inputs))
-					}
-					return context ? { value: value } : value
-				}
-			case AST.ObjectExpression:
-				args = []
-				ast.properties.forEach(property => {
-					if (property.computed) {
-						args.push({
-							key: self.recurse(property.key),
-							computed: true,
-							value: self.recurse(property.value)
-						})
-					} else {
-						args.push({
-							key: property.key.type === AST.Identifier ? property.key.name : "" + property.key.value,
-							computed: false,
-							value: self.recurse(property.value)
-						})
-					}
-				})
-				return function (scope, locals, assign, inputs) {
-					const value = {}
-					for (let i = 0; i < args.length; ++i) {
-						if (args[i].computed) {
-							value[args[i].key(scope, locals, assign, inputs)] = args[i].value(scope, locals, assign, inputs)
-						} else {
-							value[args[i].key] = args[i].value(scope, locals, assign, inputs)
-						}
-					}
-					return context ? { value: value } : value
-				}
-			case AST.ThisExpression:
-				return function (scope) {
-					return context ? { value: scope } : scope
-				}
-			case AST.LocalsExpression:
-				return function (scope, locals) {
-					return context ? { value: locals } : locals
-				}
-			case AST.NGValueParameter:
-				return function (scope, locals, assign) {
-					return context ? { value: assign } : assign
-				}
-		}
-	}
+function serializeOptionallyWrapped (node, subs, maxPrecedence, orEqual = false) {
+  const wrap = orEqual
+    ? (getExpressionPrecedence(node) <= maxPrecedence)
+    : (getExpressionPrecedence(node) < maxPrecedence)
+  return wrap ? ('(' + serializeAstNode(node, subs) + ')') : serializeAstNode(node, subs)
+}
 
-	"unary+" (argument, context) {
-		return function (scope, locals, assign, inputs) {
-			let arg = argument(scope, locals, assign, inputs)
-			if (isDefined(arg)) {
-				arg = +arg
-			} else {
-				arg = 0
-			}
-			return context ? { value: arg } : arg
-		}
-	}
+function serializeBinaryExpressionPart (node, parentNode, isRightHand, subs) {
+  /*
+    serializes a left-hand or right-hand expression `node`
+    from a binary expression applying the provided `operator`.
+    The `isRightHand` parameter should be `true` if the `node` is a right-hand argument.
+  */
+  const result = serializeAstNode(node, subs)
+  return expressionNeedsParentheses(node, parentNode, isRightHand) ? `(${result})` : result
+}
 
-	"unary-" (argument, context) {
-		return function (scope, locals, assign, inputs) {
-			let arg = argument(scope, locals, assign, inputs)
-			if (isDefined(arg)) {
-				arg = -arg
-			} else {
-				arg = -0
-			}
-			return context ? { value: arg } : arg
+function serializeAstNode (ast, subs = false, isElseIf = false) {
+  switch (ast.type) {
+    case AST.Program:
+		case AST.BlockStatement:
+      return ast.body.map(statement => serializeAstNode(statement, subs)).join(ast.joiner || '')
+		case AST.QuasiStatement:
+			return (ast.value && ast.value.raw) || ast.value
+    case AST.ExpressionStatement:
+      return '{[' + serializeAstNode(ast.expression, subs) + ']}'
+		case AST.IfStatement: {
+			return (isElseIf ? '{[elseif ' : '{[if ')
+				+ serializeAstNode(ast.test, subs) + ']}'
+			  + serializeAstNode(ast.consequent, subs)
+				+ ast.alternate
+				  ? ast.alternate.type === AST.IfStatement
+					  ? '{[elseif ' + serializeAstNode(ast.alternate.test, subs) + ']}' + serializeAstNode(ast.alternate.consequent)
+						: '{[else]}' + serializeAstNode(ast.alternate, subs) + '{[endif]}'
+					: '{[endif]}'
 		}
-	}
-
-	"unary!" (argument, context) {
-		return function (scope, locals, assign, inputs) {
-			const arg = !argument(scope, locals, assign, inputs)
-			return context ? { value: arg } : arg
-		}
-	}
-
-	"binary+" (left, right, context) {
-		return function (scope, locals, assign, inputs) {
-			const lhs = left(scope, locals, assign, inputs)
-			const rhs = right(scope, locals, assign, inputs)
-			const arg = plusFn(lhs, rhs)
-			return context ? { value: arg } : arg
-		}
-	}
-
-	"binary-" (left, right, context) {
-		return function (scope, locals, assign, inputs) {
-			const lhs = left(scope, locals, assign, inputs)
-			const rhs = right(scope, locals, assign, inputs)
-			const arg = (isDefined(lhs) ? lhs : 0) - (isDefined(rhs) ? rhs : 0);
-			return context ? { value: arg } : arg
-		}
-	}
-
-	"binary*" (left, right, context) {
-		return function (scope, locals, assign, inputs) {
-			const arg = left(scope, locals, assign, inputs) * right(scope, locals, assign, inputs)
-			return context ? { value: arg } : arg
-		}
-	}
-
-	"binary/" (left, right, context) {
-		return function (scope, locals, assign, inputs) {
-			const arg = left(scope, locals, assign, inputs) / right(scope, locals, assign, inputs)
-			return context ? { value: arg } : arg
-		}
-	}
-
-	"binary%" (left, right, context) {
-		return function (scope, locals, assign, inputs) {
-			const arg = left(scope, locals, assign, inputs) % right(scope, locals, assign, inputs)
-			return context ? { value: arg } : arg
-		}
-	}
-
-	"binary===" (left, right, context) {
-		return function (scope, locals, assign, inputs) {
-			const arg = left(scope, locals, assign, inputs) === right(scope, locals, assign, inputs)
-			return context ? { value: arg } : arg
-		}
-	}
-
-	"binary!==" (left, right, context) {
-		return function (scope, locals, assign, inputs) {
-			const arg = left(scope, locals, assign, inputs) !== right(scope, locals, assign, inputs)
-			return context ? { value: arg } : arg
-		}
-	}
-
-	"binary==" (left, right, context) {
-		return function (scope, locals, assign, inputs) {
-			// eslint-disable-next-line eqeqeq
-			const arg = left(scope, locals, assign, inputs) == right(scope, locals, assign, inputs)
-			return context ? { value: arg } : arg
-		}
-	}
-
-	"binary!=" (left, right, context) {
-		return function (scope, locals, assign, inputs) {
-			// eslint-disable-next-line eqeqeq
-			const arg = left(scope, locals, assign, inputs) != right(scope, locals, assign, inputs)
-			return context ? { value: arg } : arg
-		}
-	}
-
-	"binary<" (left, right, context) {
-		return function (scope, locals, assign, inputs) {
-			const arg = left(scope, locals, assign, inputs) < right(scope, locals, assign, inputs)
-			return context ? { value: arg } : arg
-		}
-	}
-
-	"binary>" (left, right, context) {
-		return function (scope, locals, assign, inputs) {
-			const arg = left(scope, locals, assign, inputs) > right(scope, locals, assign, inputs)
-			return context ? { value: arg } : arg
-		}
-	}
-
-	"binary<=" (left, right, context) {
-		return function (scope, locals, assign, inputs) {
-			const arg = left(scope, locals, assign, inputs) <= right(scope, locals, assign, inputs)
-			return context ? { value: arg } : arg
-		}
-	}
-
-	"binary>=" (left, right, context) {
-		return function (scope, locals, assign, inputs) {
-			const arg = left(scope, locals, assign, inputs) >= right(scope, locals, assign, inputs)
-			return context ? { value: arg } : arg
-		}
-	}
-
-	"binary&&" (left, right, context) {
-		return function (scope, locals, assign, inputs) {
-			const arg = left(scope, locals, assign, inputs) && right(scope, locals, assign, inputs)
-			return context ? { value: arg } : arg
-		}
-	}
-
-	"binary||" (left, right, context) {
-		return function (scope, locals, assign, inputs) {
-			const arg = left(scope, locals, assign, inputs) || right(scope, locals, assign, inputs)
-			return context ? { value: arg } : arg
-		}
-	}
-
-	"ternary?:" (test, consequent, alternate, context) {
-		return function (scope, locals, assign, inputs) {
-			const arg = test(scope, locals, assign, inputs)
-				? consequent(scope, locals, assign, inputs)
-				: alternate(scope, locals, assign, inputs)
-			return context ? { value: arg } : arg
-		}
-	}
-
-	value (value, context) {
-		return function () {
-			return context
-				? { context: undefined, name: undefined, value: value }
-				: value
-		}
-	}
-
-	identifier (name, context, create) {
-		return function (scope, locals, assign, inputs) {
-			const base = locals && name in locals ? locals : scope
-			if (create && create !== 1 && base && base[name] == null) {
-				base[name] = {}
-			}
-			const value = base ? base[name] : undefined
-			if (context) {
-				return { context: base, name: name, value: value }
-			} else {
-				return value
-			}
-		}
-	}
-
-	computedMember (left, right, context, create) {
-		return function (scope, locals, assign, inputs) {
-			const lhs = left(scope, locals, assign, inputs)
-			let rhs
-			let value
-			if (lhs != null) {
-				rhs = right(scope, locals, assign, inputs)
-				rhs = getStringValue(rhs)
-				if (create && create !== 1) {
-					if (lhs && !lhs[rhs]) {
-						lhs[rhs] = {}
-					}
-				}
-				value = lhs[rhs]
-			}
-			if (context) {
-				return { context: lhs, name: rhs, value: value }
-			} else {
-				return value
-			}
-		}
-	}
-
-	nonComputedMember (left, right, context, create) {
-		return function (scope, locals, assign, inputs) {
-			const lhs = left(scope, locals, assign, inputs)
-			if (create && create !== 1) {
-				if (lhs && lhs[right] == null) {
-					lhs[right] = {}
-				}
-			}
-			const value = lhs != null ? lhs[right] : undefined
-			if (context) {
-				return { context: lhs, name: right, value: value }
-			} else {
-				return value
-			}
-		}
-	}
-
-	inputs (input, watchId) {
-		return function (scope, value, locals, inputs) {
-			if (inputs) return inputs[watchId]
-			return input(scope, value, locals)
-		}
-	}
+    case AST.Literal:
+      if (typeof ast.value === 'string') { return '"' + ast.value + '"' }
+      if (ast.value === null) { return 'null' }
+      return ast.value.toString()
+    case AST.Identifier:
+      return ast.name
+    case AST.MemberExpression:
+      return serializeOptionallyWrapped(ast.object, subs, EXPRESSIONS_PRECEDENCE.MemberExpression) + (
+        ast.computed
+          ? ('[' + serializeAstNode(ast.property, subs) + ']')
+          : ('.' + serializeAstNode(ast.property, subs))
+      )
+    case AST.CallExpression:
+			return serializeAstNode(ast.callee, subs) + '('
+				+ ast.arguments.map(
+					argObj => serializeOptionallyWrapped(argObj, subs, EXPRESSIONS_PRECEDENCE.CommaOrSequence)
+				).join(',') + ')'
+    case AST.FilterExpression:
+      return (
+        serializeOptionallyWrapped(ast.input, subs, EXPRESSIONS_PRECEDENCE.FilterExpression, ast.rtl)
+        + '|' + serializeAstNode(ast.filter, subs)
+        + ast.arguments.map(arg =>
+          ':' + serializeOptionallyWrapped(arg, subs, EXPRESSIONS_PRECEDENCE.FilterExpression)
+        ).join('')
+      )
+    case AST.ArrayExpression:
+      return '[' + ast.elements.map(
+        elem => serializeOptionallyWrapped(elem, subs, EXPRESSIONS_PRECEDENCE.CommaOrSequence)
+      ).join(',') + ']'
+    case AST.ObjectExpression:
+      return '{' + ast.properties.map(prop => serializeAstNode(prop, subs)).join(',') + '}'
+    case AST.Property:
+      return (ast.computed ? '[' : '') + serializeAstNode(ast.key, subs)
+        + (ast.computed ? ']' : '') + ':'
+        + serializeOptionallyWrapped(ast.value, subs, EXPRESSIONS_PRECEDENCE.Property)
+    case AST.BinaryExpression:
+    case AST.LogicalExpression:
+      return serializeBinaryExpressionPart(ast.left, ast, false, subs)
+        + ast.operator + serializeBinaryExpressionPart(ast.right, ast, true, subs)
+    case AST.UnaryExpression:
+      return ast.prefix
+        ? ast.operator + serializeOptionallyWrapped(ast.argument, subs, EXPRESSIONS_PRECEDENCE.UnaryExpression)
+        : serializeAstNode(ast.argument, subs) + ast.operator
+    case AST.ConditionalExpression:
+      return (
+        serializeOptionallyWrapped(ast.test, subs, EXPRESSIONS_PRECEDENCE.ConditionalExpression, true)
+        + '?' + serializeOptionallyWrapped(
+          ast.consequent,
+          subs,
+          EXPRESSIONS_PRECEDENCE.ConditionalExpression
+        ) + ':' + serializeOptionallyWrapped(
+          ast.alternate,
+          subs,
+          EXPRESSIONS_PRECEDENCE.ConditionalExpression
+        )
+      )
+    case AST.ThisExpression:
+      return 'this'
+    case AST.LocalsExpression:
+      return /* subs ? '' : */ '$locals'
+		case AST.AssignmentExpression:
+			return serializeAstNode(ast.left) + '=' + serializeAstNode(ast.right)
+    default:
+      throw new Error(`Unsupported expression type '${ast.type}'`)
+  }
 }

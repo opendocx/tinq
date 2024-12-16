@@ -159,7 +159,7 @@ function contains (input, value) {
   if (typeof inputPrimitive === 'string') {
     return inputPrimitive.includes(value)
   }
-  if (input instanceof Scope) throw new Error('Unexpected scope as contains input')
+  // if (input instanceof Scope) throw new Error('Unexpected scope as contains input')
   if (!Scope.isIterable(input)) return false
   value = value && value.valueOf()
   for (const item of input) {
@@ -172,7 +172,7 @@ function contains (input, value) {
 
 function punc (inputList, example = '1, 2, and 3') {
   if (!inputList) return inputList
-  if (inputList instanceof Scope) throw new Error('Unexpected scope as punc input')
+  // if (inputList instanceof Scope) throw new Error('Unexpected scope as punc input')
   if (!inputList || !Array.isArray(inputList) || !inputList.length) return inputList
   const parsed = Scope.parseListExample(example)
   if (parsed) {
@@ -188,15 +188,16 @@ function punc (inputList, example = '1, 2, and 3') {
 
 function sort (input) {
   if (!input) return input
-  if (input instanceof Scope) throw new Error('Unexpected scope as sort input')
+  // if (input instanceof Scope) throw new Error('Unexpected scope as sort input')
   if (!Array.isArray(input) || !input.length || arguments.length < 2) return input
   const sortBy = []
   let i = 1
   while (i < arguments.length) {
-    const argument = unEscapeQuotes(arguments[i++])
+    // TODO: what is argument at this point?
+    const sortKeyLambda = arguments[i++]
     sortBy.push({
-      descending: argument[0] === '-',
-      evaluator: expressions.compile('+-'.includes(argument[0]) ? argument.substr(1) : argument)
+      descending: sortKeyLambda.descending,
+      evaluator: sortKeyLambda
     })
   }
   function compare (a, b, depth) {
@@ -204,7 +205,7 @@ function sort (input) {
       depth = 0
     }
     if (depth >= sortBy.length) { return 0 }
-    const valA = sortBy[depth].evaluator(a, a) // sort expressions must only  refer to stuff in the current list item
+    const valA = sortBy[depth].evaluator(a, a) // sort expressions must only refer to stuff in the current list item
     const valB = sortBy[depth].evaluator(b, b)
     if (valA < valB) { return sortBy[depth].descending ? 1 : -1 }
     if (valA > valB) { return sortBy[depth].descending ? -1 : 1 }
@@ -214,45 +215,45 @@ function sort (input) {
 }
 sort.listFilter = true
 
-function filter (input, predicateStr) {
+function filter (input, predicate) {
   if (input && input.length === 0) return input
-  return callArrayFunc(Array.prototype.filter, input, predicateStr)
+  return callArrayFunc(Array.prototype.filter, input, predicate)
 }
 filter.listFilter = true
 
-function find (input, predicateStr) {
+function find (input, predicate) {
   if (input && input.length === 0) return null
-  return callArrayFunc(Array.prototype.find, input, predicateStr)
+  return callArrayFunc(Array.prototype.find, input, predicate)
 }
 find.listFilter = true
 
-function any (input, predicateStr) {
+function any (input, predicate) {
   if (input && input.length === 0) return false
-  return callArrayFunc(Array.prototype.some, input, predicateStr)
+  return callArrayFunc(Array.prototype.some, input, predicate)
 }
 any.listFilter = true
 any.rtlFilter = true
 
-function every (input, predicateStr) {
+function every (input, predicate) {
   if (input && input.length === 0) return true
-  return callArrayFunc(Array.prototype.every, input, predicateStr)
+  return callArrayFunc(Array.prototype.every, input, predicate)
 }
 every.listFilter = true
 every.rtlFilter = true
 
-function map (input, mappedStr) {
-  return callArrayFunc(Array.prototype.map, input, mappedStr)
+function map (input, mapLambda) {
+  return callArrayFunc(Array.prototype.map, input, mapLambda)
 }
 map.listFilter = true
 
-function group (input, groupStr) {
+function group (input, groupLambda) {
   if (!input) return input
-  if (input instanceof Scope) throw new Error('Unexpected scope as group input')
+  // if (input instanceof Scope) throw new Error('Unexpected scope as group input')
   if (!Array.isArray(input) || arguments.length < 2) {
     return input
   }
   if (input.length === 0) return []
-  const evaluator = base.compileExpr(unEscapeQuotes(groupStr))
+  const evaluator = groupLambda
   // let lScope = Scope.pushList(input, scope.__frame)
   const grouped = input.reduce(
     (result, item, index) => {
@@ -283,15 +284,15 @@ function group (input, groupStr) {
 }
 group.listFilter = true
 
-function reduce (input, reducerStr, initValue = undefined) {
+function reduce (input, reducerLambda, initValue = undefined) {
   if (!input) return input
-  if (input instanceof Scope) throw new Error('Unexpected scope as reduce input')
+  // if (input instanceof Scope) throw new Error('Unexpected scope as reduce input')
   if (!Array.isArray(input) || arguments.length < 2) {
     return input
   }
   if (input.length === 0) return initValue
   // input should now be an array of scope proxy objects (or other plain objects or primitive values)
-  const reducer = base.compileExpr(unEscapeQuotes(reducerStr))
+  const reducer = reducerLambda
   const input0 = input[0]
   const yobj0 = input0 && input0.__yobj
   const list = Scope.pushList(input, yobj0 && yobj0.getParentEffective())
@@ -308,25 +309,24 @@ function reduce (input, reducerStr, initValue = undefined) {
   return reduced
 }
 reduce.listFilter = true
-reduce.immediateArgs = [1]
+// reduce.immediateArgs = [1]
 
 // helper functions
 
-function callArrayFunc (func, array, predicateStr) {
+function callArrayFunc (func, array, predicateLambda) {
   if (!array) return array
-  if (array instanceof Scope) throw new Error('Unexpected scope as list filter input')
+  // if (array instanceof Scope) throw new Error('Unexpected scope as list filter input')
   if (!Array.isArray(array) || arguments.length < 2) {
     return array // maybe we should throw instead...
   }
-  if (typeof predicateStr !== 'string') {
+  if (typeof predicateLambda !== 'function') {
     let filter = 'a list'
     if (callArrayFunc.caller) {
       filter = 'the ' + callArrayFunc.caller.name
     }
-    console.log(`Invalid argument passed to ${filter} filter: ${predicateStr}`)
-    predicateStr = '' // we should probably throw an error here instead...
+    throw new Error(`Invalid argument passed to ${filter} filter: ${predicateLambda}`)
   }
-  const evaluator = base.compileExpr(unEscapeQuotes(predicateStr))
+  const evaluator = predicateLambda
   // const justThis = evaluator.ast.type === AST.ThisExpression // no scope lookup necessary -- we just want raw value
   // predicateStr can refer to built-in properties _index, _index0, or _parent.
   // These need to evaluate to the correct thing.

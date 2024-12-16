@@ -1,3 +1,5 @@
+import { AST } from "./parser.mjs";
+
 /**
  * Creates a new object without a prototype. This object is useful for lookup without having to
  * guard against prototypically inherited properties via hasOwnProperty.
@@ -137,6 +139,130 @@ export function plusFn (l, r) {
 	return l + r
 }
 
+export function isStateless ($filter, filterName) {
+	const fn = $filter(filterName)
+	return !fn.$stateful
+}
+
+export function findConstantExpressions (ast, $filter) {
+	let allConstants
+	let argsToWatch
+	switch (ast.type) {
+		case AST.Program:
+			allConstants = true
+      ast.body.forEach(expr => {
+				findConstantExpressions(expr.expression, $filter)
+				allConstants = allConstants && expr.expression.constant
+			})
+			ast.constant = allConstants
+			break
+		case AST.Literal:
+			ast.constant = true
+			ast.toWatch = []
+			break
+		case AST.UnaryExpression:
+			findConstantExpressions(ast.argument, $filter)
+			ast.constant = ast.argument.constant
+			ast.toWatch = ast.argument.toWatch
+			break
+		case AST.BinaryExpression:
+			findConstantExpressions(ast.left, $filter)
+			findConstantExpressions(ast.right, $filter)
+			ast.constant = ast.left.constant && ast.right.constant
+			ast.toWatch = ast.left.toWatch.concat(ast.right.toWatch)
+			break
+		case AST.LogicalExpression:
+			findConstantExpressions(ast.left, $filter)
+			findConstantExpressions(ast.right, $filter)
+			ast.constant = ast.left.constant && ast.right.constant
+			ast.toWatch = ast.constant ? [] : [ast]
+			break
+		case AST.ConditionalExpression:
+			findConstantExpressions(ast.test, $filter)
+			findConstantExpressions(ast.consequent, $filter)
+			findConstantExpressions(ast.alternate, $filter)
+			ast.constant = ast.test.constant && ast.consequent.constant && ast.alternate.constant
+			ast.toWatch = ast.constant ? [] : [ast]
+			break
+		case AST.Identifier:
+			ast.constant = false
+			ast.toWatch = [ast]
+			break
+		case AST.MemberExpression:
+			findConstantExpressions(ast.object, $filter)
+			if (ast.computed) {
+				findConstantExpressions(ast.property, $filter)
+			}
+			ast.constant = ast.object.constant && (!ast.computed || ast.property.constant)
+			ast.toWatch = [ast]
+			break
+		case AST.CallExpression:
+			ast.arguments.forEach(expr => {
+				findConstantExpressions(expr, $filter)
+			})
+			ast.constant = false
+			ast.toWatch = [ast]
+			break
+		case AST.FilterExpression:
+			argsToWatch = []
+			findConstantExpressions(ast.input, $filter)
+			if (!ast.input.constant) {
+				argsToWatch.push.apply(argsToWatch, ast.input.toWatch)
+			}
+			allConstants = true
+			ast.arguments.forEach(expr => {
+				findConstantExpressions(expr, $filter)
+				allConstants = allConstants && expr.constant
+				if (!expr.constant) {
+					argsToWatch.push.apply(argsToWatch, expr.toWatch)
+				}
+			})
+			ast.constant = allConstants
+			ast.toWatch = argsToWatch
+			break
+		case AST.AssignmentExpression:
+			findConstantExpressions(ast.left, $filter)
+			findConstantExpressions(ast.right, $filter)
+			ast.constant = ast.left.constant && ast.right.constant
+			ast.toWatch = [ast]
+			break
+		case AST.ArrayExpression:
+			allConstants = true
+			argsToWatch = []
+      ast.elements.forEach(expr => {
+				findConstantExpressions(expr, $filter)
+				allConstants = allConstants && expr.constant
+				if (!expr.constant) {
+					argsToWatch.push.apply(argsToWatch, expr.toWatch)
+				}
+			})
+			ast.constant = allConstants
+			ast.toWatch = argsToWatch
+			break
+		case AST.ObjectExpression:
+			allConstants = true
+			argsToWatch = []
+      ast.properties.forEach(property => {
+				findConstantExpressions(property.value, $filter)
+				allConstants = allConstants && property.value.constant && !property.computed
+				if (!property.value.constant) {
+					argsToWatch.push.apply(argsToWatch, property.value.toWatch)
+				}
+			})
+			ast.constant = allConstants
+			ast.toWatch = argsToWatch
+			break
+		case AST.ThisExpression:
+			ast.constant = false
+			ast.toWatch = []
+			break
+		case AST.LocalsExpression:
+			ast.constant = false
+			ast.toWatch = []
+			break
+	}
+}
+
 /**
  * A function that performs no operations. This function can be useful when writing code in the
  * functional style.
@@ -148,3 +274,49 @@ export function plusFn (l, r) {
    ```
  */
 export function noop() {}
+
+export function getInputs (body) {
+	if (body.length !== 1) return
+	const lastExpression = body[0].expression
+	const candidate = lastExpression.toWatch
+	if (candidate.length !== 1) return candidate
+	return candidate[0] !== lastExpression ? candidate : undefined
+}
+
+export function isConstant (ast) {
+	return ast.constant
+}
+
+export function isLiteral (ast) {
+	return ast.type === AST.Program
+		? (
+			ast.body.length === 0 ||
+			(ast.body.length === 1 &&
+				(ast.body[0].expression.type === AST.Literal ||
+					ast.body[0].expression.type === AST.ArrayExpression ||
+					ast.body[0].expression.type === AST.ObjectExpression))
+		)
+		: (
+			ast.type === AST.Literal ||
+			ast.type === AST.ArrayExpression ||
+			ast.type === AST.ObjectExpression
+		)
+}
+
+export function isAssignable (ast) {
+	return ast.type === AST.Identifier || ast.type === AST.MemberExpression
+}
+
+export function assignableAST (ast) {
+	const exprAst = ast && ast.type === AST.Program && ast.body.length === 1
+		? ast.body[0].expression
+		: ast
+	if (exprAst && isAssignable(exprAst)) {
+		return {
+			type: AST.AssignmentExpression,
+			left: exprAst,
+			right: { type: AST.NGValueParameter },
+			operator: "="
+		}
+	}
+}
