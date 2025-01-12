@@ -128,29 +128,65 @@ export class ASTInterpreter {
 				}
 			case AST.FilterExpression:
 				right = this.$filter(ast.filter.name)
-				args = []
+				args = [] // for regular filters, input is first arg, then any other filter args
 				args.push(self.recurse(ast.input))
-				ast.arguments.forEach((expr, idx) => {
-					if (ast.listFilter && idx === 0) { // list filter means treat first argument as a lambda!
-						if (ast.filter.name === 'sort' && expr.type === AST.UnaryExpression && '+-'.includes(expr.operator)) {
-							lambda = self.recurse(expr.argument)
-							if (expr.operator === '-') {
-								lambda.descending = true
-							}
-						} else {
-							lambda = self.recurse(expr)
-						}
-						args.push(() => lambda)
-					} else {
-						args.push(self.recurse(expr))
-					}
+				ast.arguments.forEach(expr => {
+					args.push(self.recurse(expr))
 				})
 				return function (scope, locals, assign, inputs) {
 					const values = []
 					for (let i = 0; i < args.length; ++i) {
 						values.push(args[i](scope, locals, assign, inputs))
 					}
-					const value = right.apply(undefined, values, inputs)
+					const value = right.apply(undefined, values, inputs) // bug/question (inherited from angular-expressions): does 3rd argument to apply() actually DO anything?  (it's not documented anywhere I have found!)
+					return context
+						? { context: undefined, name: undefined, value: value }
+						: value
+				}
+			case AST.ListKeyFilterExpression:
+				right = this.$filter(ast.filter.name)
+				args = [] // for list key (sort) filters, input (array) is first arg, then all remaining args are lambdas (sort keys)
+				args.push(self.recurse(ast.input))
+				lambda = []
+				ast.arguments.forEach((lambdaExpr, idx) => {
+					if (lambdaExpr.type === AST.UnaryExpression && '+-'.includes(lambdaExpr.operator)) {
+						lambda[idx] = self.recurse(lambdaExpr.argument)
+						if (lambdaExpr.operator === '-') {
+							lambda[idx].descending = true
+						}
+					} else {
+						lambda[idx] = self.recurse(lambdaExpr)
+					}
+					args.push(() => lambda[idx])
+				})
+				return function (scope, locals, assign, inputs) {
+					const values = []
+					for (let i = 0; i < args.length; ++i) {
+						values.push(args[i](scope, locals, assign, inputs))
+					}
+					const value = right.apply(undefined, values, inputs) // bug/question (inherited from angular-expressions): does 3rd argument to apply() actually DO anything?  (it's not documented anywhere I have found!)
+					return context
+						? { context: undefined, name: undefined, value: value }
+						: value
+				}
+			case AST.ListFilterExpression:
+				right = this.$filter(ast.filter.name)
+				args = [] // for list filters, input (array) is first arg, then the lambda, then any other filter args
+				args.push(self.recurse(ast.input))
+				if (ast.lambda) {
+					lambda = self.recurse(ast.lambda)
+					args.push(() => lambda)
+					// and any remaining arguments are normal values
+					ast.arguments.forEach(expr => {
+						args.push(self.recurse(expr))
+					})
+				}
+				return function (scope, locals, assign, inputs) {
+					const values = []
+					for (let i = 0; i < args.length; ++i) {
+						values.push(args[i](scope, locals, assign, inputs))
+					}
+					const value = right.apply(undefined, values, inputs) // bug/question (inherited from angular-expressions): does 3rd argument to apply() actually DO anything?  (it's not documented anywhere I have found!)
 					return context
 						? { context: undefined, name: undefined, value: value }
 						: value

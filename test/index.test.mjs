@@ -7,7 +7,7 @@ chai.config.includeStack = true;
 
 // These tests make no claim to be complete. We only test the most important parts of angular expressions.
 // I hope they have their own tests ;)
-describe("expressions", function() {
+describe("YEvaluate", function() {
 	describe(".Lexer", function() {
 		it("should be a function", function() {
 			expect(expressions.Lexer).to.be.a("function");
@@ -35,7 +35,20 @@ describe("expressions", function() {
 	describe(".compile(src)", function() {
 		var scope;
 		var evaluate;
-		var compiler = new Compiler()
+		var options = {
+			csp: false, // csp == true uses interpreter instead of compiler (interesting for test/debug, but otherwise why?)
+			expensiveChecks: true,
+			includeLocation: true,
+			literals: {
+				true: true,
+				false: false,
+				null: null,
+				undefined: undefined,
+			}
+			//isIdentifierStart: undefined, //isFunction(identStart) && identStart,
+			//isIdentifierContinue: undefined //isFunction(identContinue) && identContinue
+		}
+		var compiler = new Compiler(undefined, options)
 
 		beforeEach(function() {
 			scope = {
@@ -375,6 +388,12 @@ describe("expressions", function() {
 				expect(
 					evaluate({})
 				).to.deep.equal([9,5,4,3,1,1]);
+			});
+			it("should apply the sort filter with multiple mixed keys", function() {
+				evaluate = compiler.compile('[{a:"A",b:2},{a:"A",b:1},{a:"A",b:3},{a:"B",b:3},{a:"B",b:1},{a:"B",b:2}] | sort:-a:b');
+				expect(
+					evaluate({})
+				).to.deep.equal([{a:"B",b:1},{a:"B",b:2},{a:"B",b:3},{a:"A",b:1},{a:"A",b:2},{a:"A",b:3}])
 			});
 		});
 

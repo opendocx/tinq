@@ -364,14 +364,39 @@ export class ASTCompiler {
 				args.push(left)
 				ast.arguments.forEach(expr => {
 					const argument = self.nextId()
-					if (!expr._lkey) { // argument for immediate evaluation (not previously identified as a lambda)
-						self.recurse(expr, argument)
-					} else { // previously identified as lambda: ast.listFilter && idx === 0 (or sort key)
+					self.recurse(expr, argument)
+					args.push(argument)
+				})
+				// expression = right + "(" + args.join(",") + ")" // original
+				expression = right + ".call(" + right + "," + args.join(",") + ")" // current in angular-expressions
+				// or should the above also work with undefined passed as first arg into .call()?
+				self.assign(intoId, expression)
+				recursionFn(intoId)
+				break
+			case AST.ListKeyFilterExpression:
+			case AST.ListFilterExpression:
+				intoId = intoId || this.nextId()
+				right = self.filter(ast.filter.name)
+				args = []
+				left = self.nextId()
+				self.recurse(ast.input, left)
+				args.push(left)
+				if (ast.lambda) { // should also have been previously identified in lambda pass as a lambda
+					const lambdaArg = self.nextId()
+					let lambdaId = ast.lambda._lkey
+					self.assign(lambdaArg, self.generateFunction(lambdaId, "s,l"))
+					args.push(lambdaArg)
+				}
+				ast.arguments.forEach(expr => {
+					const argument = self.nextId()
+					if (expr._lkey) { // previously identified (in lambda pass) as a lambda (i.e. sort key)
 						let lambdaId = expr._lkey
 						self.assign(argument, self.generateFunction(lambdaId, "s,l"))
 						if (self.state[lambdaId].descend) {
 							self.assign(argument + '.descending', 'true')
 						}
+					} else { // argument for immediate evaluation (not previously identified as a lambda)
+						self.recurse(expr, argument)
 					}
 					args.push(argument)
 				})
@@ -645,18 +670,23 @@ function * FindLambdas (ast) {
 			}
 			break
     case AST.FilterExpression:
+		case AST.ListKeyFilterExpression:
+		case AST.ListFilterExpression:
+			if (ast.lambda) {
+				yield * FindLambdas(ast.lambda)
+			}
 			for (const argument of ast.arguments) {
 				yield * FindLambdas(argument)
 			}
 			yield * FindLambdas(ast.input)
-			if (ast.filter.name === 'sort') { // special handling for sort key lambdas
+			if (ast.type === AST.ListKeyFilterExpression) { // special handling for sort key lambdas
 				for (const expr of ast.arguments) {
 					expr._sortKey = true
 					yield expr
 				}
-			} else {
-				if (ast.listFilter && ast.arguments.length > 0) {
-					yield ast.arguments[0]
+			} else if (ast.type === AST.ListFilterExpression) {
+				if (ast.lambda) {
+					yield ast.lambda
 				}
 			}
 			break

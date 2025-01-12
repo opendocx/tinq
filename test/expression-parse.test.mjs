@@ -61,146 +61,109 @@ describe('Parsing expressions ', function () {
       assert.deepStrictEqual(ast, ListFilterAST)
     })
 
-  //   it('correctly normalizes an expression with functions and this', function () {
-  //     const evaluator = compiler.compile('[].concat(Client, Spouse, Children)|filter:this')
-  //     assert.deepStrictEqual(evaluator.normalized, '[].concat(Client,Spouse,Children)|filter:"this"')
-  //   })
+    it('correctly normalizes an expression with functions and this', function () {
+      const ast = compiler.parse('[].concat(Client, Spouse, Children)|filter: this')
+      const normalized = AST.serialize(ast)
+      assert.deepStrictEqual(normalized, '[].concat(Client,Spouse,Children)|filter:this')
+    })
 
-  //   it('correctly parses and compiles array concatenation and filtering out falsy values', function () {
-  //     const evaluator = compiler.compile('[].concat(Client, Spouse, Children)|filter:this')
-  //     assert.deepStrictEqual(evaluator.ast, {
-  //       type: 'ListFilterExpression',
-  //       rtl: false,
-  //       constant: false,
-  //       filter: { type: 'Identifier', name: 'filter' },
-  //       input: {
-  //         type: 'CallExpression',
-  //         constant: false,
-  //         callee: {
-  //           type: 'MemberExpression',
-  //           computed: false,
-  //           object: { type: 'ArrayExpression', elements: [] },
-  //           property: { type: 'Identifier', name: 'concat' }
-  //         },
-  //         arguments: [
-  //           { type: 'Identifier', name: 'Client', constant: false },
-  //           { type: 'Identifier', name: 'Spouse', constant: false },
-  //           { type: 'Identifier', name: 'Children', constant: false }
-  //         ]
-  //       },
-  //       arguments: [{ type: 'LocalsExpression', constant: false }]
-  //     })
-  //   })
+    it('correctly parses array concatenation and filtering out falsy values', function () {
+      const ast = compiler.parse('[].concat(Client, Spouse, Children)|filter:this')
+      assert.deepStrictEqual(ast, {
+        type: 'ListFilterExpression',
+        input: {
+          type: 'CallExpression',
+          callee: {
+            type: 'MemberExpression',
+            computed: false,
+            object: { type: 'ArrayExpression', elements: [] },
+            property: { type: 'Identifier', name: 'concat', loc: { start: { column: 3 }, end: { column: 9 } } }
+          },
+          arguments: [
+            { type: 'Identifier', name: 'Client', loc: { start: { column: 10 }, end: { column: 16 } } },
+            { type: 'Identifier', name: 'Spouse', loc: { start: { column: 18 }, end: { column: 24 } } },
+            { type: 'Identifier', name: 'Children', loc: { start: { column: 26 }, end: { column: 34 } } }
+          ]
+        },
+        filter: { type: 'Identifier', name: 'filter', loc: { start: { column: 36 }, end: { column: 42 } } },
+        lambda: { type: 'ThisExpression' }, // in yatte this was a LocalsExpression instead??
+        arguments: [],
+        rtl: false
+      })
+    })
 
-  //   it('allow chaining of "any" filter (and/or its "some" alias)', function () {
-  //     const evaluator = compiler.compile('Families | some: Children|any: Birthdate > currentDate')
-  //     assert.deepStrictEqual(evaluator.normalized, 'Families|any:"Children|any:&quot;Birthdate>currentDate&quot;"')
-  //     assert.deepStrictEqual(evaluator.ast, ListFilterAST)
-  //   })
+    it('allow chaining of "any" filter (and/or its "some" alias)', function () {
+      compiler.parser.options.includeLocation = false
+      const ast = compiler.parse('Families | some: Children|any: Birthdate > currentDate')
+      compiler.parser.options.includeLocation = true
+      const normalized = AST.serialize(ast)
+      assert.deepStrictEqual(normalized, 'Families|some:Children|any:Birthdate>currentDate') // true normalization would change some -> any ... 
+      const temphackAst = { ...ListFilterAST, filter: { ...ListFilterAST.filter, name: 'some' } }
+      assert.deepStrictEqual(ast, temphackAst)
+    })
 
     const ListFilterAST = {
-      type: 'FilterExpression',
-      rtl: true,
-      input: {
-        type: 'Identifier',
-        name: 'Families',
-        // constant: false
-      },
+      type: 'ListFilterExpression',
+      input: { type: 'Identifier', name: 'Families' },
       filter: { type: 'Identifier', name: 'any' },
-      listFilter: true,
-      arguments: [
-        {
-          type: 'FilterExpression',
-          rtl: true,
-          input: {
-            type: 'Identifier',
-            name: 'Children',
-            // constant: false
-          },
-          filter: { type: 'Identifier', name: 'any' },
-          listFilter: true,
-          arguments: [
-            {
-              type: 'BinaryExpression',
-              operator: '>',
-              left: { type: 'Identifier', name: 'Birthdate', /*constant: false*/ },
-              right: { type: 'Identifier', name: 'currentDate', /*constant: false*/ },
-              // constant: false
-            }
-          ],
-          // constant: false
-        }
-      ],
-      // constant: false
+      lambda: {
+        type: 'ListFilterExpression',
+        input: { type: 'Identifier', name: 'Children' },
+        filter: { type: 'Identifier', name: 'any' },
+        lambda: {
+          type: 'BinaryExpression',
+          operator: '>',
+          left: { type: 'Identifier', name: 'Birthdate' },
+          right: { type: 'Identifier', name: 'currentDate' },
+        },
+        arguments: [],
+        rtl: true,
+      },
+      arguments: [],
+      rtl: true,
     }
 
-  //   it('allow chaining of the "any" filter with nested objects', function () {
-  //     const evaluator = compiler.compile('obj1.list1|any:obj2.list2|any:prop3')
-  //     assert.deepStrictEqual(evaluator.normalized, 'obj1.list1|any:"obj2.list2|any:&quot;prop3&quot;"')
-  //     assert.deepStrictEqual(evaluator.ast, nestedAny_AST)
-  //     // ensure the normalized expression produces the same AST but does not get recompiled!
-  //     const evaluator2 = compiler.compile(' ' + evaluator.normalized)
-  //     assert.deepStrictEqual(evaluator2.ast, evaluator.ast)
-  //     assert.deepStrictEqual(evaluator2.normalized, evaluator.normalized)
-  //     assert.deepStrictEqual(evaluator.toString(), evaluator2.toString())
-  //   })
+    it('allow chaining of the "any" filter with nested objects', function () {
+      compiler.parser.options.includeLocation = false
+      const ast = compiler.parse('obj1.list1|any:obj2.list2|any:prop3')
+      const normalized = AST.serialize(ast)
+      compiler.parser.options.includeLocation = true
+      assert.deepStrictEqual(normalized, 'obj1.list1|any:obj2.list2|any:prop3')
+      assert.deepStrictEqual(ast, nestedAny_AST)
+      // ensure the normalized expression produces the same AST but does not get recompiled!
+      compiler.parser.options.includeLocation = false
+      const ast2 = compiler.parse(' ' + normalized)
+      const normalized2 = AST.serialize(ast2)
+      compiler.parser.options.includeLocation = true
+      assert.deepStrictEqual(ast2, ast)
+      assert.deepStrictEqual(normalized2, normalized)
+    })
 
-  //   it('allows lookup of/access to an object in a list using the find filter', function () {
-  //     const evaluator = compiler.compile('(table|find:col1=="b").col2')
-  //     const data = {
-  //       table: [
-  //         { col1: 'a', col2: 'A' },
-  //         { col1: 'b', col2: 'B' },
-  //         { col1: 'c', col2: 'C' },
-  //       ],
-  //     }
-  //     const result = evaluator(data)
-  //     assert.strictEqual(result, 'B')
-  //   })
-
-  //   it('allows lookup of/access to an object in a list with context using the find filter', function () {
-  //     const evaluator = compiler.compile('(table|find:col1==value).col2')
-  //     const data = {
-  //       value: 'b',
-  //       table: [
-  //         { col1: 'a', col2: 'A' },
-  //         { col1: 'b', col2: 'B' },
-  //         { col1: 'c', col2: 'C' },
-  //       ],
-  //     }
-  //     const scope = require('../src/index').Scope.pushObject(data)
-  //     const result = scope.evaluate(evaluator)
-  //     assert.strictEqual(result, 'B')
-  //   })
-
-  //   const nestedAny_AST = {
-  //     type: 'ListFilterExpression',
-  //     rtl: true,
-  //     input: {
-  //       type: 'MemberExpression',
-  //       object: { type: 'Identifier', name: 'obj1', constant: false },
-  //       property: { type: 'Identifier', name: 'list1' },
-  //       computed: false,
-  //       constant: false
-  //     },
-  //     filter: { type: 'Identifier', name: 'any' },
-  //     arguments: [{
-  //       type: 'ListFilterExpression',
-  //       rtl: true,
-  //       input: {
-  //         type: 'MemberExpression',
-  //         object: { type: 'Identifier', name: 'obj2', constant: false },
-  //         property: { type: 'Identifier', name: 'list2' },
-  //         computed: false,
-  //         constant: false
-  //       },
-  //       filter: { type: 'Identifier', name: 'any' },
-  //       arguments: [{ type: 'Identifier', name: 'prop3', constant: false }],
-  //       constant: false
-  //     }
-  //     ],
-  //     constant: false
-  //   }
+    const nestedAny_AST = {
+      type: 'ListFilterExpression',
+      input: {
+        type: 'MemberExpression',
+        object: { type: 'Identifier', name: 'obj1' },
+        property: { type: 'Identifier', name: 'list1' },
+        computed: false,
+      },
+      filter: { type: 'Identifier', name: 'any' },
+      lambda: {
+        type: 'ListFilterExpression',
+        input: {
+          type: 'MemberExpression',
+          object: { type: 'Identifier', name: 'obj2' },
+          property: { type: 'Identifier', name: 'list2' },
+          computed: false,
+        },
+        filter: { type: 'Identifier', name: 'any' },
+        lambda: { type: 'Identifier', name: 'prop3' },
+        arguments: [],
+        rtl: true,
+      },
+      arguments: [],
+      rtl: true,
+    }
 
   //   it('cleans up parse errors thrown by angular-expressions', function () {
   //     assert.throws(() => compiler.compile('members|name!=this.name'), // forgot "filter" filter

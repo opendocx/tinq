@@ -301,24 +301,25 @@ export class AST {
 	filter (baseExpression) {
 		const filterIdent = this.identifier()
 		const filterFunc = filters[filterIdent.name]
-		const args = []
-		const newNode = {
-			type: AST.FilterExpression,
-			filter: filterIdent,
-			input: baseExpression,
-			arguments: args
+		const newNode = (!filterFunc || !filterFunc.listFilter)
+			? { type: AST.FilterExpression }
+			: (filterFunc.keyFilter)
+				? { type: AST.ListKeyFilterExpression }
+				: { type: AST.ListFilterExpression }
+		newNode.filter = filterIdent
+		newNode.input = baseExpression
+		if (filterFunc && filterFunc.listFilter && !filterFunc.keyFilter) {
+			newNode.lambda = this.expect(":") && this.expression()
+			newNode.rtl = Boolean(filterFunc.rtlFilter)
 		}
-		if (filterFunc) {
-			if (filterFunc.listFilter) newNode.listFilter = true
-			if (filterFunc.rtlFilter) newNode.rtl = true
-		}
+		const args = newNode.arguments = []
 		while (this.expect(":")) {
 			args.push(this.expression())
 		}
-		if (newNode.rtl && baseExpression.type === AST.FilterExpression && baseExpression.rtl) {
+		if (newNode.rtl && baseExpression.type === AST.ListFilterExpression && baseExpression.rtl) {
 			// modify filter chaining for adjacent filters with right-to-left preference
-			newNode.input = baseExpression.arguments[0]
-			baseExpression.arguments[0] = newNode
+			newNode.input = baseExpression.lambda
+			baseExpression.lambda = newNode
 			return baseExpression
 		} // else
 		return newNode
@@ -472,7 +473,7 @@ AST.ExpressionStatement = 'ExpressionStatement' // a content field in a template
 AST.EmptyStatement = 'EmptyStatement' // no-op statement in a template
 AST.IfStatement = 'IfStatement' // an if/elseif/else/endif block in a template
 AST.ForOfStatement = 'ForOfStatement' // a list/endlist block in a template
-AST.ThisExpression = 'ThisExpression'
+AST.ThisExpression = 'ThisExpression' // "this" keyword -- in angular-expression, this represents the "scope"
 AST.ArrayExpression = 'ArrayExpression'
 AST.ObjectExpression = 'ObjectExpression'
 AST.Property = 'Property'
@@ -484,8 +485,10 @@ AST.ConditionalExpression = 'ConditionalExpression'
 AST.CallExpression = 'CallExpression'
 AST.AssignmentExpression = 'AssignmentExpression'
 // also includes some custom/proprietary node types:
-AST.LocalsExpression = 'LocalsExpression' // like 'ThisExpression', but for angular-expressions' local scope (if needed?)
-AST.FilterExpression = 'FilterExpression' // properties: rtl (bool), input (node), filter (ident), arguments (node array)
+AST.LocalsExpression = 'LocalsExpression' // "$locals" keyword -- like 'ThisExpression', but for angular-expressions' local scope
+AST.FilterExpression = 'FilterExpression' // properties: input (node), filter (ident), arguments (node array)
+AST.ListKeyFilterExpression = 'ListKeyFilterExpression' // properties: input (node), filter (ident), arguments (node array)
+AST.ListFilterExpression = 'ListFilterExpression' // properties: input (node), filter (ident), lambda (node), rtl (bool), arguments (node array)
 // static methods
 AST.serialize = serializeAstNode
 AST.mutateInPlace = astMutateInPlace
@@ -536,6 +539,8 @@ const EXPRESSIONS_PRECEDENCE = {
   CommaOrSequence: 1,
   [AST.Property]: 1,
   [AST.FilterExpression]: 0,
+	[AST.ListKeyFilterExpression]: 0,
+	[AST.ListFilterExpression]: 0,
 }
 
 function astMutateInPlace (node, mutator) {
@@ -561,12 +566,20 @@ function astMutateInPlace (node, mutator) {
         false
       )
     case AST.FilterExpression:
+		case AST.ListKeyFilterExpression:
       return nodeModified | astMutateInPlace(node.filter, mutator)
         | astMutateInPlace(node.input, mutator) | node.arguments.reduce(
         (accumulator, argObj) => (accumulator |= astMutateInPlace(argObj, mutator)),
         false
       )
-    case AST.ArrayExpression:
+		case AST.ListFilterExpression:
+			return nodeModified | astMutateInPlace(node.filter, mutator)
+				| astMutateInPlace(node.input, mutator)
+				| astMutateInPlace(node.lambda, mutator) | node.arguments.reduce(
+				(accumulator, argObj) => (accumulator |= astMutateInPlace(argObj, mutator)),
+				false
+			)
+		case AST.ArrayExpression:
       return nodeModified | node.elements.reduce(
         (accumulator, elem) => (accumulator |= astMutateInPlace(elem, mutator)),
         false
@@ -670,14 +683,24 @@ function serializeAstNode (ast, subs = false, isElseIf = false) {
 					argObj => serializeOptionallyWrapped(argObj, subs, EXPRESSIONS_PRECEDENCE.CommaOrSequence)
 				).join(',') + ')'
     case AST.FilterExpression:
+		case AST.ListKeyFilterExpression:
       return (
-        serializeOptionallyWrapped(ast.input, subs, EXPRESSIONS_PRECEDENCE.FilterExpression, ast.rtl)
+        serializeOptionallyWrapped(ast.input, subs, EXPRESSIONS_PRECEDENCE.FilterExpression)
         + '|' + serializeAstNode(ast.filter, subs)
         + ast.arguments.map(arg =>
           ':' + serializeOptionallyWrapped(arg, subs, EXPRESSIONS_PRECEDENCE.FilterExpression)
         ).join('')
       )
-    case AST.ArrayExpression:
+		case AST.ListFilterExpression:
+			return (
+				serializeOptionallyWrapped(ast.input, subs, EXPRESSIONS_PRECEDENCE.FilterExpression, ast.rtl)
+				+ '|' + serializeAstNode(ast.filter, subs)
+				+ ':' + serializeOptionallyWrapped(ast.lambda, subs, EXPRESSIONS_PRECEDENCE.FilterExpression)
+				+ ast.arguments.map(arg =>
+					':' + serializeOptionallyWrapped(arg, subs, EXPRESSIONS_PRECEDENCE.FilterExpression)
+				).join('')
+			)
+		case AST.ArrayExpression:
       return '[' + ast.elements.map(
         elem => serializeOptionallyWrapped(elem, subs, EXPRESSIONS_PRECEDENCE.CommaOrSequence)
       ).join(',') + ']'

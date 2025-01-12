@@ -2,11 +2,13 @@ import { format as dateFnsFormat } from 'date-fns'
 import numeral from 'numeral'
 import numWords from 'number-to-words-en'
 import deepEqual from 'fast-deep-equal'
+import { Yvalue, isIterable } from './yvalue.mjs'
+import { unEscapeQuotes } from './utils.mjs'
 
 // define built-in filters
 export default {
   // regular (scalar value) filters
-  upper, lower, initcap, titlecaps, format, cardinal, ordinal, ordsuffix, else: else_filter, contains, punc,
+  upper, lower, initcap, titlecaps, format, cardinal, ordinal, ordsuffix, else: else_filter, contains, punc, keepsections, 
   // list (array) filters
   sort, filter, find, any, every, some: any, all: every, map, group, reduce,
 }
@@ -30,11 +32,29 @@ function initcap (input, forceLower = false) {
   return input.charAt(0).toUpperCase() + input.slice(1)
 }
 
+// const TitleCapRegEx_AsciiOnly = /(^|[^'’]|\W['’])\b([a-z])/gm // not only [a-z], but also \W and \b are ASCII only!
+// without \b and \W, this is harder to do...
+const TitleCapRegEx = /^\p{Ll}|(?:\s|(?:^|.)\p{P})\p{Ll}/gmu
+// 1st case: ^\p{Ll}  - char 0 is lowercase letter
+// 2nd case: \s\p{Ll} - char n is whitespace, char n+1 is lowercase letter
+// 3rd case: ^\p{P}\p{Ll} - char 0 is punctuation, char 1 lowercase letter
+// 4th case: .\p{P}\p{Ll} - char n is ANYTHING (.), char n+1 is punctuation, char n+2 is lowercase letter
+//      >> in this case additional logic is required to decide whether it's an exceptional case or not!
+const UnicodeWordChar = /\p{L}|\p{N}/u
+
 function titlecaps (input, forceLower = false) {
   if (!input) return input
   if (typeof input !== 'string') input = input.toString()
   if (forceLower) input = input.toLowerCase()
-  return input.replace(/(^| )(\w)/g, s => s.toUpperCase())
+  return input.replace(TitleCapRegEx, s => {
+    // console.log(s)
+    if (s.length === 3) { // 4th case above
+      return (s[1] === "'" || s[1] === '’') && UnicodeWordChar.test(s[0])
+        ? s // EXCEPTION for possessives and mid-word contractions: don't capitalize
+        : s.slice(0, 2) + s[2].toUpperCase() // otherwise - do capitalize
+    }
+    return s.toUpperCase() // all other cases
+  })
 }
 
 class DateFormatFixer {
@@ -160,7 +180,7 @@ function contains (input, value) {
     return inputPrimitive.includes(value)
   }
   // if (input instanceof Scope) throw new Error('Unexpected scope as contains input')
-  if (!Scope.isIterable(input)) return false
+  if (!isIterable(input)) return false
   value = value && value.valueOf()
   for (const item of input) {
     if (deepEqual(item && item.valueOf(), value)) {
@@ -174,7 +194,7 @@ function punc (inputList, example = '1, 2, and 3') {
   if (!inputList) return inputList
   // if (inputList instanceof Scope) throw new Error('Unexpected scope as punc input')
   if (!inputList || !Array.isArray(inputList) || !inputList.length) return inputList
-  const parsed = Scope.parseListExample(example)
+  const parsed = Yvalue.parseListExample(example)
   if (parsed) {
     // inputList may be the actual source array (the context stack has not yet been pushed!)
     // so make a shallow copy before adding any custom properties onto the array
@@ -182,6 +202,18 @@ function punc (inputList, example = '1, 2, and 3') {
     inputList['punc'] = parsed
   }
   return inputList
+}
+
+function keepsections (input) {
+  if (!input) return input
+  if (typeof input !== 'object') return input
+  const newInput = input.valueOf()
+  if (newInput && (!newInput.contentType || newInput.contentType === 'docx')) {
+    newInput.KeepSections = true
+  } else {
+    console.log('keepsections filter used on something other than a DOCX insert/indirect')
+  }
+  return newInput
 }
 
 // runtime implementation of list filters:
@@ -214,35 +246,36 @@ function sort (input) {
   return input.slice().sort(compare)
 }
 sort.listFilter = true
+sort.keyFilter = true
 
 function filter (input, predicate) {
   if (input && input.length === 0) return input
-  return callArrayFunc(Array.prototype.filter, input, predicate)
+  return callArrayFunc(Array.prototype.filter, input, predicate, 'filter')
 }
 filter.listFilter = true
 
 function find (input, predicate) {
   if (input && input.length === 0) return null
-  return callArrayFunc(Array.prototype.find, input, predicate)
+  return callArrayFunc(Array.prototype.find, input, predicate, 'find')
 }
 find.listFilter = true
 
 function any (input, predicate) {
   if (input && input.length === 0) return false
-  return callArrayFunc(Array.prototype.some, input, predicate)
+  return callArrayFunc(Array.prototype.some, input, predicate, 'any')
 }
 any.listFilter = true
 any.rtlFilter = true
 
 function every (input, predicate) {
   if (input && input.length === 0) return true
-  return callArrayFunc(Array.prototype.every, input, predicate)
+  return callArrayFunc(Array.prototype.every, input, predicate, 'every')
 }
 every.listFilter = true
 every.rtlFilter = true
 
 function map (input, mapLambda) {
-  return callArrayFunc(Array.prototype.map, input, mapLambda)
+  return callArrayFunc(Array.prototype.map, input, mapLambda, 'map')
 }
 map.listFilter = true
 
@@ -313,7 +346,7 @@ reduce.listFilter = true
 
 // helper functions
 
-function callArrayFunc (func, array, predicateLambda) {
+function callArrayFunc (func, array, predicateLambda, funcName) {
   if (!array) return array
   // if (array instanceof Scope) throw new Error('Unexpected scope as list filter input')
   if (!Array.isArray(array) || arguments.length < 2) {
@@ -321,8 +354,8 @@ function callArrayFunc (func, array, predicateLambda) {
   }
   if (typeof predicateLambda !== 'function') {
     let filter = 'a list'
-    if (callArrayFunc.caller) {
-      filter = 'the ' + callArrayFunc.caller.name
+    if (funcName) {
+      filter = 'the ' + funcName
     }
     throw new Error(`Invalid argument passed to ${filter} filter: ${predicateLambda}`)
   }

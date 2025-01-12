@@ -204,12 +204,21 @@ export function findConstantExpressions (ast, $filter) {
 			ast.toWatch = [ast]
 			break
 		case AST.FilterExpression:
+		case AST.ListKeyFilterExpression:
+		case AST.ListFilterExpression:
 			argsToWatch = []
 			findConstantExpressions(ast.input, $filter)
 			if (!ast.input.constant) {
 				argsToWatch.push.apply(argsToWatch, ast.input.toWatch)
 			}
 			allConstants = true
+			if (ast.type === AST.ListFilterExpression) {
+				findConstantExpressions(ast.lambda, $filter)
+				if (!ast.lambda.constant) {
+					allConstants = false
+					argsToWatch.push.apply(argsToWatch, ast.lambda.toWatch)
+				}
+			}
 			ast.arguments.forEach(expr => {
 				findConstantExpressions(expr, $filter)
 				allConstants = allConstants && expr.constant
@@ -319,4 +328,13 @@ export function assignableAST (ast) {
 			operator: "="
 		}
 	}
+}
+
+export function escapeQuotes (str) {
+  // include ampersands so escaping is nestable AND reversable when nested
+  return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+}
+
+export function unEscapeQuotes (str) {
+  return str.replace(/&apos;/g, '\'').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
 }
