@@ -10,7 +10,7 @@ export default {
   // regular (scalar value) filters
   upper, lower, initcap, titlecaps, format, cardinal, ordinal, ordsuffix, else: else_filter, contains, punc, keepsections, 
   // list (array) filters
-  sort, filter, find, any, every, some: any, all: every, map, group, reduce,
+  sort, filter, find, any, every, map, group, reduce,
 }
 
 function upper (input) {
@@ -264,6 +264,7 @@ function any (input, predicate) {
   if (input && input.length === 0) return false
   return callArrayFunc(Array.prototype.some, input, predicate, 'any')
 }
+any.aliases = ['some']
 any.listFilter = true
 any.rtlFilter = true
 
@@ -271,6 +272,7 @@ function every (input, predicate) {
   if (input && input.length === 0) return true
   return callArrayFunc(Array.prototype.every, input, predicate, 'every')
 }
+every.aliases = ['all']
 every.listFilter = true
 every.rtlFilter = true
 

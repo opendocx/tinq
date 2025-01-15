@@ -18,7 +18,6 @@ export class ASTCompiler {
 			filters: {},
 			fn: { vars: [], body: [], own: {} },
 			assign: { vars: [], body: [], own: {} },
-			lambdas: [],
 			inputs: []
 		}
 		let extra = ""
@@ -32,20 +31,8 @@ export class ASTCompiler {
 				self.state[lkey] = { vars: [], body: [], own: {} }
 				self.state.computing = lkey
 				const lid = self.nextId()
-				if (lnode._sortKey) {
-					let keyNode = lnode
-					if (lnode.type === AST.UnaryExpression && '+-'.includes(lnode.operator)) {
-						keyNode = lnode.argument
-						if (lnode.operator === '-') {
-							self.state[lkey].descend = true
-						}
-					}
-					self.recurse(keyNode, lid)
-				} else {
-					self.recurse(lnode, lid)
-				}
+				self.recurse(lnode.type === AST.SortKeyExpression ? lnode.key : lnode.body, lid)
 				self.return_(lid)
-				self.state.lambdas.push(lkey)
 			}
 			// let assignable
 			// this.stage = "assign"
@@ -364,7 +351,14 @@ export class ASTCompiler {
 				args.push(left)
 				ast.arguments.forEach(expr => {
 					const argument = self.nextId()
-					self.recurse(expr, argument)
+					if (expr.type === AST.LambdaExpression || expr.type === AST.SortKeyExpression) {
+						self.assign(argument, self.generateFunction(expr._lkey, "s,l"))
+						if (expr.type === AST.SortKeyExpression && expr.descending) {
+							self.assign(argument + '.descending', 'true')
+						}
+					} else {
+						self.recurse(expr, argument)
+					}
 					args.push(argument)
 				})
 				// expression = right + "(" + args.join(",") + ")" // original
@@ -373,36 +367,9 @@ export class ASTCompiler {
 				self.assign(intoId, expression)
 				recursionFn(intoId)
 				break
-			case AST.ListKeyFilterExpression:
-			case AST.ListFilterExpression:
-				intoId = intoId || this.nextId()
-				right = self.filter(ast.filter.name)
-				args = []
-				left = self.nextId()
-				self.recurse(ast.input, left)
-				args.push(left)
-				if (ast.lambda) { // should also have been previously identified in lambda pass as a lambda
-					const lambdaArg = self.nextId()
-					let lambdaId = ast.lambda._lkey
-					self.assign(lambdaArg, self.generateFunction(lambdaId, "s,l"))
-					args.push(lambdaArg)
-				}
-				ast.arguments.forEach(expr => {
-					const argument = self.nextId()
-					if (expr._lkey) { // previously identified (in lambda pass) as a lambda (i.e. sort key)
-						let lambdaId = expr._lkey
-						self.assign(argument, self.generateFunction(lambdaId, "s,l"))
-						if (self.state[lambdaId].descend) {
-							self.assign(argument + '.descending', 'true')
-						}
-					} else { // argument for immediate evaluation (not previously identified as a lambda)
-						self.recurse(expr, argument)
-					}
-					args.push(argument)
-				})
-				expression = right + "(" + args.join(",") + ")"
-				self.assign(intoId, expression)
-				recursionFn(intoId)
+			case AST.LambdaExpression:
+			case AST.SortKeyExpression:
+				// currently no-op; already handled earlier in lambda pass
 				break
 			case AST.AssignmentExpression:
 				right = this.nextId()
@@ -670,25 +637,18 @@ function * FindLambdas (ast) {
 			}
 			break
     case AST.FilterExpression:
-		case AST.ListKeyFilterExpression:
-		case AST.ListFilterExpression:
-			if (ast.lambda) {
-				yield * FindLambdas(ast.lambda)
-			}
+			yield * FindLambdas(ast.input)
 			for (const argument of ast.arguments) {
 				yield * FindLambdas(argument)
 			}
-			yield * FindLambdas(ast.input)
-			if (ast.type === AST.ListKeyFilterExpression) { // special handling for sort key lambdas
-				for (const expr of ast.arguments) {
-					expr._sortKey = true
-					yield expr
-				}
-			} else if (ast.type === AST.ListFilterExpression) {
-				if (ast.lambda) {
-					yield ast.lambda
-				}
-			}
+			break
+		case AST.LambdaExpression:
+			yield * FindLambdas(ast.body)
+			yield ast
+			break
+		case AST.SortKeyExpression:
+			yield * FindLambdas(ast.key)
+			yield ast
 			break
     case AST.ArrayExpression:
 			for (const elem of ast.elements) {

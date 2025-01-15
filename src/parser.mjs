@@ -3,13 +3,23 @@ import { ASTCompiler } from "./astcompiler.mjs";
 import { isAssignable } from "./utils.mjs";
 import filters from "./filters.mjs"
 
+const filterAliases = {}
+for (const name in filters) {
+	const func = filters[name]
+	if (func && func.aliases) {
+		func.aliases.forEach(alias => {
+			filterAliases[alias] = func
+		})
+	}
+}
+
 export class Parser {
 	constructor (lexer, typeDict, options) {
 		this.lexer = lexer
 		this.options = options
 		this.typeDict = typeDict
 		this.$filter = function getFilter (name) {
-			return filters[name]
+			return filters[name] || filterAliases[name]
 		}
 		this.ast = new AST(lexer, options)
 		this.astCompiler = options.csp
@@ -103,10 +113,21 @@ export class AST {
 	}
 
 	expression () {
-		return this.assignment()
+		return this.assignment() // since an assignment can occur basically anywhere an expression can occur
 	}
 
-	assignment () {
+	lambdaExpression () {
+		// const start = this.tokens[0].index
+		let result = //this.addLoc(
+			{
+				type: AST.LambdaExpression,
+				body: this.ternary(),
+			}
+		//, start)
+		return result
+	}
+
+	assignment () { // parses bare expressions AND assignments!
 		const start = this.tokens[0].index
 		let result = this.ternary()
 		if (this.expect("=")) {
@@ -243,17 +264,35 @@ export class AST {
 		}
 	}
 
+	sortKey () {
+		const token = this.expect("+", "-")
+		return {
+			type: AST.SortKeyExpression,
+			key: this.primary(),
+			descending: Boolean(token && token.text === "-"),
+		}
+	}
+
+	selfRef () {
+		const start = this.tokens[0].index
+		const token = this.consume().text
+		return this.addLoc({ ...this.selfReferential[token] }, start, start + token.length)
+	}
+
 	primary () {
 		let primary
 		if (this.expect("(")) {
 			primary = this.filterChain()
 			this.consume(")")
+			if (primary.rtl) {
+				primary.endGroup = true // the parentheses override this node's normal RTL behavior
+			}
 		} else if (this.expect("[")) {
 			primary = this.arrayDeclaration()
 		} else if (this.expect("{")) {
 			primary = this.object()
 		} else if (this.selfReferential.hasOwnProperty(this.peek().text)) {
-			primary = { ...this.selfReferential[this.consume().text] }
+			primary = this.selfRef()
 		} else if (this.options.literals.hasOwnProperty(this.peek().text)) {
 			primary = {
 				type: AST.Literal,
@@ -300,26 +339,44 @@ export class AST {
 
 	filter (baseExpression) {
 		const filterIdent = this.identifier()
-		const filterFunc = filters[filterIdent.name]
-		const newNode = (!filterFunc || !filterFunc.listFilter)
-			? { type: AST.FilterExpression }
-			: (filterFunc.keyFilter)
-				? { type: AST.ListKeyFilterExpression }
-				: { type: AST.ListFilterExpression }
-		newNode.filter = filterIdent
-		newNode.input = baseExpression
-		if (filterFunc && filterFunc.listFilter && !filterFunc.keyFilter) {
-			newNode.lambda = this.expect(":") && this.expression()
-			newNode.rtl = Boolean(filterFunc.rtlFilter)
+		let filterFunc = filters[filterIdent.name]
+		if (!filterFunc) {
+			filterFunc = filterAliases[filterIdent.name]
+			if (filterFunc) {
+				// filterIdent.origName = filterIdent.name // breaks some tests right now, but might be useful?
+				filterIdent.name = filterFunc.name // aliases get normalized in AST
+			}
+		}
+		const isListFilter = filterFunc && filterFunc.listFilter
+		const isSort = isListFilter && filterFunc.keyFilter
+		const isRTL = isListFilter && filterFunc.rtlFilter
+		const newNode = {
+			type: AST.FilterExpression,
+			filter: filterIdent,
+			input: baseExpression,
+			lambda: Boolean(isListFilter),
+			rtl: Boolean(isRTL),
 		}
 		const args = newNode.arguments = []
+		let argNum = 0
 		while (this.expect(":")) {
-			args.push(this.expression())
+			args.push(
+				isSort
+					? this.sortKey()
+					: isListFilter && argNum === 0
+					  ? this.lambdaExpression()
+						: this.expression()
+			)
+			argNum++
 		}
-		if (newNode.rtl && baseExpression.type === AST.ListFilterExpression && baseExpression.rtl) {
+		if (isRTL && baseExpression.rtl && !baseExpression.endGroup) {
 			// modify filter chaining for adjacent filters with right-to-left preference
-			newNode.input = baseExpression.lambda
-			baseExpression.lambda = newNode
+			let reparent = baseExpression
+			while (reparent.arguments[0].body.rtl && !reparent.endGroup) {
+				reparent = reparent.arguments[0].body
+			}
+			newNode.input = reparent.arguments[0].body
+			reparent.arguments[0].body = newNode
 			return baseExpression
 		} // else
 		return newNode
@@ -487,8 +544,8 @@ AST.AssignmentExpression = 'AssignmentExpression'
 // also includes some custom/proprietary node types:
 AST.LocalsExpression = 'LocalsExpression' // "$locals" keyword -- like 'ThisExpression', but for angular-expressions' local scope
 AST.FilterExpression = 'FilterExpression' // properties: input (node), filter (ident), arguments (node array)
-AST.ListKeyFilterExpression = 'ListKeyFilterExpression' // properties: input (node), filter (ident), arguments (node array)
-AST.ListFilterExpression = 'ListFilterExpression' // properties: input (node), filter (ident), lambda (node), rtl (bool), arguments (node array)
+AST.LambdaExpression = 'LambdaExpression' // list filter argument -- properties: body (node)
+AST.SortKeyExpression = 'SortKeyExpression' // sort filter argument -- properties: key (node), descending (bool)
 // static methods
 AST.serialize = serializeAstNode
 AST.mutateInPlace = astMutateInPlace
@@ -533,14 +590,14 @@ const EXPRESSIONS_PRECEDENCE = {
   [AST.ObjectExpression]: NEEDS_PARENTHESES,
   // Other operations
   [AST.UnaryExpression]: 17,
+	[AST.SortKeyExpression]: 17,
   [AST.BinaryExpression]: 14,
   [AST.LogicalExpression]: 12,
   [AST.ConditionalExpression]: 4,
   CommaOrSequence: 1,
   [AST.Property]: 1,
+	[AST.LambdaExpression]: 1,
   [AST.FilterExpression]: 0,
-	[AST.ListKeyFilterExpression]: 0,
-	[AST.ListFilterExpression]: 0,
 }
 
 function astMutateInPlace (node, mutator) {
@@ -566,19 +623,15 @@ function astMutateInPlace (node, mutator) {
         false
       )
     case AST.FilterExpression:
-		case AST.ListKeyFilterExpression:
       return nodeModified | astMutateInPlace(node.filter, mutator)
         | astMutateInPlace(node.input, mutator) | node.arguments.reduce(
         (accumulator, argObj) => (accumulator |= astMutateInPlace(argObj, mutator)),
         false
       )
-		case AST.ListFilterExpression:
-			return nodeModified | astMutateInPlace(node.filter, mutator)
-				| astMutateInPlace(node.input, mutator)
-				| astMutateInPlace(node.lambda, mutator) | node.arguments.reduce(
-				(accumulator, argObj) => (accumulator |= astMutateInPlace(argObj, mutator)),
-				false
-			)
+		case AST.LambdaExpression:
+			return nodeModified | astMutateInPlace(node.body, mutator)
+		case AST.SortKeyExpression:
+			return nodeModified | astMutateInPlace(node.key, mutator)
 		case AST.ArrayExpression:
       return nodeModified | node.elements.reduce(
         (accumulator, elem) => (accumulator |= astMutateInPlace(elem, mutator)),
@@ -605,6 +658,9 @@ function astMutateInPlace (node, mutator) {
 }
 
 function getExpressionPrecedence (node) {
+	if (node.type === AST.LambdaExpression)
+			return EXPRESSIONS_PRECEDENCE[node.body.type]
+	// else
   return EXPRESSIONS_PRECEDENCE[node.type]
 }
 
@@ -633,7 +689,19 @@ function serializeOptionallyWrapped (node, subs, maxPrecedence, orEqual = false)
   const wrap = orEqual
     ? (getExpressionPrecedence(node) <= maxPrecedence)
     : (getExpressionPrecedence(node) < maxPrecedence)
-  return wrap ? ('(' + serializeAstNode(node, subs) + ')') : serializeAstNode(node, subs)
+  return (wrap || node.endGroup) ? ('(' + serializeAstNode(node, subs) + ')') : serializeAstNode(node, subs)
+}
+
+function serializeFilterArg (argNode, rtl) {
+	const argPrecedence = getExpressionPrecedence(argNode)
+	const filterPrecedence = EXPRESSIONS_PRECEDENCE[AST.FilterExpression] // getExpressionPrecedence(filterNode)
+	if (rtl) { // right-to-left precedence by default for this filter
+		// so if arg is also a filter, DON'T wrap it in parens
+		return serializeAstNode(argNode)
+	} else { // normal/default left-to-right precedence
+		// otherwise, if arg is a filter, it WILL need to be wrapped in parens
+		return serializeOptionallyWrapped(argNode, false, filterPrecedence, true)
+	}
 }
 
 function serializeBinaryExpressionPart (node, parentNode, isRightHand, subs) {
@@ -683,23 +751,17 @@ function serializeAstNode (ast, subs = false, isElseIf = false) {
 					argObj => serializeOptionallyWrapped(argObj, subs, EXPRESSIONS_PRECEDENCE.CommaOrSequence)
 				).join(',') + ')'
     case AST.FilterExpression:
-		case AST.ListKeyFilterExpression:
       return (
         serializeOptionallyWrapped(ast.input, subs, EXPRESSIONS_PRECEDENCE.FilterExpression)
         + '|' + serializeAstNode(ast.filter, subs)
         + ast.arguments.map(arg =>
-          ':' + serializeOptionallyWrapped(arg, subs, EXPRESSIONS_PRECEDENCE.FilterExpression)
+          ':' + serializeFilterArg(arg, ast.rtl) // serializeOptionallyWrapped(arg, subs, EXPRESSIONS_PRECEDENCE.FilterExpression)
         ).join('')
       )
-		case AST.ListFilterExpression:
-			return (
-				serializeOptionallyWrapped(ast.input, subs, EXPRESSIONS_PRECEDENCE.FilterExpression, ast.rtl)
-				+ '|' + serializeAstNode(ast.filter, subs)
-				+ ':' + serializeOptionallyWrapped(ast.lambda, subs, EXPRESSIONS_PRECEDENCE.FilterExpression)
-				+ ast.arguments.map(arg =>
-					':' + serializeOptionallyWrapped(arg, subs, EXPRESSIONS_PRECEDENCE.FilterExpression)
-				).join('')
-			)
+		case AST.LambdaExpression:
+			return serializeAstNode(ast.body) // serializeOptionallyWrapped(ast.body, subs, EXPRESSIONS_PRECEDENCE.LambdaExpression)
+		case AST.SortKeyExpression:
+			return (ast.descending ? '-' : '') +  serializeOptionallyWrapped(ast.key, subs, EXPRESSIONS_PRECEDENCE.SortKeyExpression)
 		case AST.ArrayExpression:
       return '[' + ast.elements.map(
         elem => serializeOptionallyWrapped(elem, subs, EXPRESSIONS_PRECEDENCE.CommaOrSequence)

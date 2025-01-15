@@ -5,458 +5,463 @@ var expressions = { Lexer, Parser }
 
 chai.config.includeStack = true;
 
-// These tests make no claim to be complete. We only test the most important parts of angular expressions.
-// I hope they have their own tests ;)
+var compilerOptions = {
+	csp: false, // csp == true uses interpreter instead of compiler (interesting for test/debug, but otherwise why?)
+	expensiveChecks: true,
+	includeLocation: true,
+	literals: {
+		true: true,
+		false: false,
+		null: null,
+		undefined: undefined,
+	}
+	//isIdentifierStart: undefined, //isFunction(identStart) && identStart,
+	//isIdentifierContinue: undefined //isFunction(identContinue) && identContinue
+}
+
+var testPhases = ['interpreter', 'compiler']
+
 describe("YEvaluate", function() {
 	describe(".Lexer", function() {
 		it("should be a function", function() {
-			expect(expressions.Lexer).to.be.a("function");
-		});
+			expect(expressions.Lexer).to.be.a("function")
+		})
 
 		it("should provide a .lex()-method", function() {
-			var lexer = new expressions.Lexer();
+			var lexer = new expressions.Lexer()
 
-			expect(lexer.lex).to.be.a("function");
-		});
-	});
+			expect(lexer.lex).to.be.a("function")
+		})
+	})
 
 	describe(".Parser", function() {
 		it("should be a function", function() {
-			expect(expressions.Parser).to.be.a("function");
+			expect(expressions.Parser).to.be.a("function")
 		});
 
 		it("should provide a .compile()-method", function() {
-			var parser = new expressions.Parser(undefined, undefined, {});
+			var parser = new expressions.Parser(undefined, undefined, {})
 
-			expect(parser.compile).to.be.a("function");
-		});
-	});
+			expect(parser.compile).to.be.a("function")
+		})
+	})
 
-	describe(".compile(src)", function() {
-		var scope;
-		var evaluate;
-		var options = {
-			csp: false, // csp == true uses interpreter instead of compiler (interesting for test/debug, but otherwise why?)
-			expensiveChecks: true,
-			includeLocation: true,
-			literals: {
-				true: true,
-				false: false,
-				null: null,
-				undefined: undefined,
-			}
-			//isIdentifierStart: undefined, //isFunction(identStart) && identStart,
-			//isIdentifierContinue: undefined //isFunction(identContinue) && identContinue
-		}
-		var compiler = new Compiler(undefined, options)
+	testPhases.forEach(phase => {
+		compilerOptions.csp = (phase === 'interpreter')
 
-		beforeEach(function() {
-			scope = {
-				ship: {
-					pirate: {
-						name: "Jenny"
-					}
-				}
-			};
-		});
-
-		it("should return a function", function() {
-			var c = compiler.compile("")
-			expect(c).to.be.a("function");
-		});
-
-		it("should throw an error if the given value is not a string", function() {
-			expect(function() {
-				compiler.compile();
-			}).to.throw("src must be a string, instead saw 'undefined'");
-		});
-
-		it("should expose the ast", function() {
-			expect(compiler.compile("tmp").ast).to.be.a("object");
-		});
-
-		describe("when evaluating literals", function() {
-			it("should return null", function() {
-				evaluate = compiler.compile("null");
-				expect(evaluate(scope)).to.equal(null);
-			});
-
-			it("should return true", function() {
-				evaluate = compiler.compile("true");
-				expect(evaluate(scope)).to.equal(true);
-			});
-
-			it("should return false", function() {
-				evaluate = compiler.compile("false");
-				expect(evaluate(scope)).to.equal(false);
-			});
-
-			it("should return 2.34e5", function() {
-				evaluate = compiler.compile("2.34e5");
-				expect(evaluate(scope)).to.equal(2.34e5);
-			});
-
-			it("should return 'string'", function() {
-				evaluate = compiler.compile("'string'");
-				expect(evaluate(scope)).to.equal("string");
-			});
-
-			it("should return [ship, 1, 2, []]", function() {
-				evaluate = compiler.compile("[ship, 1, 2, []]");
-				expect(evaluate(scope)).to.eql([scope.ship, 1, 2, []]);
-			});
-
-			it("should return { test: 'value', 'new-object': {} }", function() {
-				evaluate = compiler.compile("{ test: 'value', 'new-object': {} }");
-				expect(evaluate(scope)).to.eql({ test: "value", "new-object": {} });
-			});
-
-			it("should return context value when nothing in the scope", function() {
-				evaluate = compiler.compile("test");
-				expect(evaluate(scope, { test: "hello" })).to.equal("hello");
-			});
-
-			it("should return context value when something in the scope", function() {
-				evaluate = compiler.compile("test");
-				expect(evaluate({ test: "bye" }, { test: "hello" })).to.equal("hello");
-			});
-		});
-
-		describe("when evaluating simple key look-ups", function() {
-			it("should return the value if its defined on scope", function() {
-				evaluate = compiler.compile("ship");
-				expect(evaluate(scope)).to.equal(scope.ship);
-			});
-
-			it("should return undefined instead of throwing a ReferenceError if it's not defined on scope", function() {
-				evaluate = compiler.compile("notDefined");
-				expect(evaluate(scope)).to.equal(undefined);
-			});
-
-			it("should return the scope even when the 'this' keyword is used", function() {
-				evaluate = compiler.compile("this");
-				expect(evaluate(scope)).to.equal(scope);
-			});
-		});
-
-		describe("when evaluating simple assignments", function() {
-			it("should set the new value on scope", function() {
-				evaluate = compiler.compile("newValue = 'new'");
-				evaluate(scope);
-				expect(scope.newValue).to.equal("new");
-			});
-
-			it("should change the value if its defined on scope", function() {
-				evaluate = compiler.compile("ship = 'ship'");
-				evaluate(scope);
-				expect(scope.ship).to.equal("ship");
-			});
-		});
-
-		describe("when evaluating dot-notated loop-ups", function() {
-			it("should return the value if its defined on scope", function() {
-				evaluate = compiler.compile("ship.pirate.name");
-				expect(evaluate(scope)).to.equal("Jenny");
-			});
-
-			it("should return undefined instead of throwing a ReferenceError if it's not defined on scope", function() {
-				evaluate = compiler.compile("island.pirate.name");
-				expect(evaluate(scope)).to.equal(undefined);
-			});
-		});
-
-		describe("when evaluating dot-notated assignments", function() {
-			it("should set the new value on scope", function() {
-				evaluate = compiler.compile("island.pirate.name = 'Störtebeker'");
-				evaluate(scope);
-				expect(scope.island.pirate.name).to.equal("Störtebeker");
-			});
-
-			it("should change the value if its defined on scope", function() {
-				evaluate = compiler.compile("ship.pirate.name = 'Störtebeker'");
-				evaluate(scope);
-				expect(scope.ship.pirate.name).to.equal("Störtebeker");
-			});
-		});
-
-		describe("when evaluating array look-ups", function() {
+		describe(phase, function() {
+			var scope;
+			var evaluate;
+			var compiler = new Compiler(undefined, compilerOptions)
+	
 			beforeEach(function() {
-				scope.ships = [{ pirate: "Jenny" }, { pirate: "Störtebeker" }];
+				scope = {
+					ship: {
+						pirate: {
+							name: "Jenny"
+						}
+					}
+				};
 			});
-
-			it("should return the value if its defined on scope", function() {
-				evaluate = compiler.compile("ships[1].pirate");
-				expect(evaluate(scope)).to.equal("Störtebeker");
+	
+			it("should return a function", function() {
+				var c = compiler.compile("")
+				expect(c).to.be.a("function");
 			});
-
-			it("should return undefined instead of throwing a ReferenceError if it's not defined on scope", function() {
-				evaluate = compiler.compile("ships[2].pirate");
-				expect(evaluate(scope)).to.equal(undefined);
+	
+			it("should throw an error if the given value is not a string", function() {
+				expect(function() {
+					compiler.compile();
+				}).to.throw("src must be a string, instead saw 'undefined'");
 			});
-		});
-
-		describe("when evaluating array assignments", function() {
-			it("should change the value if its defined on scope", function() {
-				scope.ships = [{ pirate: "Jenny" }];
-				evaluate = compiler.compile("ships[0].pirate = 'Störtebeker'");
-				evaluate(scope);
-				expect(scope.ships[0].pirate).to.equal("Störtebeker");
+	
+			it("should expose the ast", function() {
+				expect(compiler.compile("tmp").ast).to.be.a("object");
 			});
-		});
-
-		describe("when evaluating function calls", function() {
-			describe("using no arguments", function() {
-				it("should return the function's return value", function() {
-					scope.findPirate = function() {
-						return scope.ship.pirate;
-					};
-
-					evaluate = compiler.compile("findPirate()");
-					expect(evaluate(scope)).to.equal(scope.ship.pirate);
+	
+			describe("when evaluating literals", function() {
+				it("should return null", function() {
+					evaluate = compiler.compile("null");
+					expect(evaluate(scope)).to.equal(null);
 				});
-
-				it("should call the function on the scope", function() {
-					scope.returnThis = function() {
-						return this;
-					};
-					evaluate = compiler.compile("returnThis()");
-					expect(evaluate(scope)).to.equal(scope);
+	
+				it("should return true", function() {
+					evaluate = compiler.compile("true");
+					expect(evaluate(scope)).to.equal(true);
 				});
-
-				it("should call the function on the object where it is defined", function() {
-					scope.ship.returnThis = function() {
-						return this;
-					};
-					evaluate = compiler.compile("ship.returnThis()");
+	
+				it("should return false", function() {
+					evaluate = compiler.compile("false");
+					expect(evaluate(scope)).to.equal(false);
+				});
+	
+				it("should return 2.34e5", function() {
+					evaluate = compiler.compile("2.34e5");
+					expect(evaluate(scope)).to.equal(2.34e5);
+				});
+	
+				it("should return 'string'", function() {
+					evaluate = compiler.compile("'string'");
+					expect(evaluate(scope)).to.equal("string");
+				});
+	
+				it("should return [ship, 1, 2, []]", function() {
+					evaluate = compiler.compile("[ship, 1, 2, []]");
+					expect(evaluate(scope)).to.eql([scope.ship, 1, 2, []]);
+				});
+	
+				it("should return { test: 'value', 'new-object': {} }", function() {
+					evaluate = compiler.compile("{ test: 'value', 'new-object': {} }");
+					expect(evaluate(scope)).to.eql({ test: "value", "new-object": {} });
+				});
+	
+				it("should return context value when nothing in the scope", function() {
+					evaluate = compiler.compile("test");
+					expect(evaluate(scope, { test: "hello" })).to.equal("hello");
+				});
+	
+				it("should return context value when something in the scope", function() {
+					evaluate = compiler.compile("test");
+					expect(evaluate({ test: "bye" }, { test: "hello" })).to.equal("hello");
+				});
+			});
+	
+			describe("when evaluating simple key look-ups", function() {
+				it("should return the value if its defined on scope", function() {
+					evaluate = compiler.compile("ship");
 					expect(evaluate(scope)).to.equal(scope.ship);
 				});
+	
+				it("should return undefined instead of throwing a ReferenceError if it's not defined on scope", function() {
+					evaluate = compiler.compile("notDefined");
+					expect(evaluate(scope)).to.equal(undefined);
+				});
+	
+				it("should return the scope even when the 'this' keyword is used", function() {
+					evaluate = compiler.compile("this");
+					expect(evaluate(scope)).to.equal(scope);
+				});
 			});
-
-			describe("using arguments", function() {
-				it("should parse the arguments accordingly", function() {
-					scope.findPirate = function() {
-						return Array.prototype.slice.call(arguments);
-					};
-					evaluate = compiler.compile("findPirate(ship.pirate, 1, [2, 3])");
-					expect(evaluate(scope)).to.eql([scope.ship.pirate, 1, [2, 3]]);
+	
+			describe("when evaluating simple assignments", function() {
+				it("should set the new value on scope", function() {
+					evaluate = compiler.compile("newValue = 'new'");
+					evaluate(scope);
+					expect(scope.newValue).to.equal("new");
+				});
+	
+				it("should change the value if its defined on scope", function() {
+					evaluate = compiler.compile("ship = 'ship'");
+					evaluate(scope);
+					expect(scope.ship).to.equal("ship");
+				});
+			});
+	
+			describe("when evaluating dot-notated loop-ups", function() {
+				it("should return the value if its defined on scope", function() {
+					evaluate = compiler.compile("ship.pirate.name");
+					expect(evaluate(scope)).to.equal("Jenny");
+				});
+	
+				it("should return undefined instead of throwing a ReferenceError if it's not defined on scope", function() {
+					evaluate = compiler.compile("island.pirate.name");
+					expect(evaluate(scope)).to.equal(undefined);
+				});
+			});
+	
+			describe("when evaluating dot-notated assignments", function() {
+				it("should set the new value on scope", function() {
+					evaluate = compiler.compile("island.pirate.name = 'Störtebeker'");
+					evaluate(scope);
+					expect(scope.island.pirate.name).to.equal("Störtebeker");
+				});
+	
+				it("should change the value if its defined on scope", function() {
+					evaluate = compiler.compile("ship.pirate.name = 'Störtebeker'");
+					evaluate(scope);
+					expect(scope.ship.pirate.name).to.equal("Störtebeker");
+				});
+			});
+	
+			describe("when evaluating array look-ups", function() {
+				beforeEach(function() {
+					scope.ships = [{ pirate: "Jenny" }, { pirate: "Störtebeker" }];
+				});
+	
+				it("should return the value if its defined on scope", function() {
+					evaluate = compiler.compile("ships[1].pirate");
+					expect(evaluate(scope)).to.equal("Störtebeker");
+				});
+	
+				it("should return undefined instead of throwing a ReferenceError if it's not defined on scope", function() {
+					evaluate = compiler.compile("ships[2].pirate");
+					expect(evaluate(scope)).to.equal(undefined);
+				});
+			});
+	
+			describe("when evaluating array assignments", function() {
+				it("should change the value if its defined on scope", function() {
+					scope.ships = [{ pirate: "Jenny" }];
+					evaluate = compiler.compile("ships[0].pirate = 'Störtebeker'");
+					evaluate(scope);
+					expect(scope.ships[0].pirate).to.equal("Störtebeker");
+				});
+			});
+	
+			describe("when evaluating function calls", function() {
+				describe("using no arguments", function() {
+					it("should return the function's return value", function() {
+						scope.findPirate = function() {
+							return scope.ship.pirate;
+						};
+	
+						evaluate = compiler.compile("findPirate()");
+						expect(evaluate(scope)).to.equal(scope.ship.pirate);
+					});
+	
+					it("should call the function on the scope", function() {
+						scope.returnThis = function() {
+							return this;
+						};
+						evaluate = compiler.compile("returnThis()");
+						expect(evaluate(scope)).to.equal(scope);
+					});
+	
+					it("should call the function on the object where it is defined", function() {
+						scope.ship.returnThis = function() {
+							return this;
+						};
+						evaluate = compiler.compile("ship.returnThis()");
+						expect(evaluate(scope)).to.equal(scope.ship);
+					});
+				});
+	
+				describe("using arguments", function() {
+					it("should parse the arguments accordingly", function() {
+						scope.findPirate = function() {
+							return Array.prototype.slice.call(arguments);
+						};
+						evaluate = compiler.compile("findPirate(ship.pirate, 1, [2, 3])");
+						expect(evaluate(scope)).to.eql([scope.ship.pirate, 1, [2, 3]]);
+					});
+				});
+			});
+	
+			describe("when evaluating operators", function() {
+				it("should return the expected result when using +", function() {
+					evaluate = compiler.compile("1 + 1");
+					expect(evaluate()).to.equal(2);
+				});
+	
+				it("should return the expected result when using -", function() {
+					evaluate = compiler.compile("1 - 1");
+					expect(evaluate()).to.equal(0);
+				});
+	
+				it("should return the expected result when using *", function() {
+					evaluate = compiler.compile("2 * 2");
+					expect(evaluate()).to.equal(4);
+				});
+	
+				it("should return the expected result when using /", function() {
+					evaluate = compiler.compile("4 / 2");
+					expect(evaluate()).to.equal(2);
+				});
+	
+				it("should return the expected result when using %", function() {
+					evaluate = compiler.compile("3 % 2");
+					expect(evaluate()).to.equal(1);
+				});
+	
+				it("should return the expected result when using &&", function() {
+					evaluate = compiler.compile("true && true");
+					expect(evaluate()).to.equal(true);
+					evaluate = compiler.compile("true && false");
+					expect(evaluate()).to.equal(false);
+					evaluate = compiler.compile("false && false");
+					expect(evaluate()).to.equal(false);
+				});
+	
+				it("should return the expected result when using ||", function() {
+					evaluate = compiler.compile("true || true");
+					expect(evaluate()).to.equal(true);
+					evaluate = compiler.compile("true || false");
+					expect(evaluate()).to.equal(true);
+					evaluate = compiler.compile("false || false");
+					expect(evaluate()).to.equal(false);
+				});
+	
+				it("should return the expected result when using !", function() {
+					evaluate = compiler.compile("!true");
+					expect(evaluate()).to.equal(false);
+					evaluate = compiler.compile("!false");
+					expect(evaluate()).to.equal(true);
+				});
+	
+				/* Ooops, angular doesn't support ++. Maybe someday?
+							it("should return the expected result when using ++", function () {
+									scope.value = 2;
+									evaluate = compiler.compile("value++");
+									expect(evaluate()).to.equal(3);
+									expect(scope.value).to.equal(3);
+							});*/
+	
+				/* Ooops, angular doesn't support --. Maybe someday?
+							it("should return the expected result when using --", function () {
+									scope.value = 2;
+									evaluate = compiler.compile("value--");
+									expect(evaluate()).to.equal(1);
+									expect(scope.value).to.equal(1);
+							});*/
+	
+				it("should return the expected result when using ?", function() {
+					evaluate = compiler.compile("true? 'it works' : false");
+					expect(evaluate()).to.equal("it works");
+					evaluate = compiler.compile("false? false : 'it works'");
+					expect(evaluate()).to.equal("it works");
+				});
+			});
+	
+			describe("using complex expressions", function() {
+				beforeEach(function() {
+					scope.ships = [
+						{
+							pirate: function(str) {
+								return str;
+							}
+						},
+						{
+							pirate: function(str) {
+								return str;
+							}
+						}
+					];
+					scope.index = 0;
+					scope.pi = "pi";
+					scope.Jenny = "Jenny";
+				});
+	
+				it("should still be parseable and executable", function() {
+					evaluate = compiler.compile("ships[index][pi + 'rate'](Jenny)");
+					expect(evaluate(scope)).to.equal("Jenny");
+				});
+			});
+	
+			describe("when evaluating syntactical errors", function() {
+				it("should give a readable error message", function() {
+					expect(function() {
+						compiler.compile("'unterminated string");
+					}).to.throw(
+						"Lexer Error: Unterminated quote at columns 0-20 ['unterminated string] in expression ['unterminated string]."
+					);
+				});
+	
+				it("should give a readable error message", function() {
+					expect(function() {
+						compiler.compile("3 = 4");
+					}).to.throw(
+						'Trying to assign a value to a non l-value'
+					);
+				});
+			});
+	
+			describe("when using filters", function() {
+				it("should apply the given filter", function() {
+					evaluate = compiler.compile('1.2345 | format:"000.00"');
+					expect(
+						evaluate({})
+					).to.equal("001.23");
+				});
+			});
+	
+			describe("when using list filters", function() {
+				it("should apply the filter filter", function() {
+					evaluate = compiler.compile('[1,2,3,4] | filter: this > 1');
+					expect(
+						evaluate({})
+					).to.deep.equal([2,3,4]);
+				});
+				it("should apply the sort filter", function() {
+					evaluate = compiler.compile('[3,1,4,1,5,9] | sort: this');
+					expect(
+						evaluate({})
+					).to.deep.equal([1,1,3,4,5,9]);
+				});
+				it("should apply the descending sort filter", function() {
+					evaluate = compiler.compile('[3,1,4,1,5,9] | sort: -this');
+					expect(
+						evaluate({})
+					).to.deep.equal([9,5,4,3,1,1]);
+				});
+				it("should apply the sort filter with multiple mixed keys", function() {
+					evaluate = compiler.compile('[{a:"A",b:2},{a:"A",b:1},{a:"A",b:3},{a:"B",b:3},{a:"B",b:1},{a:"B",b:2}] | sort:-a:b');
+					expect(
+						evaluate({})
+					).to.deep.equal([{a:"B",b:1},{a:"B",b:2},{a:"B",b:3},{a:"A",b:1},{a:"A",b:2},{a:"A",b:3}])
+				});
+			});
+	
+			describe("when evaluating the same expression multiple times", function() {
+				it("should cache the generated function", function() {
+					expect(compiler.compile("a")).to.equal(compiler.compile("a"));
+				});
+			});
+	
+			// describe("for assigning values", function() {
+			// 	beforeEach(function() {
+			// 		scope = {};
+			// 	});
+	
+			// 	it("should expose an 'assign'-function", function() {
+			// 		var fn = compiler.compile("a");
+	
+			// 		expect(fn.assign).to.be.a("function");
+			// 		fn.assign(scope, 123);
+			// 		expect(scope.a).to.equal(123);
+			// 	});
+	
+			// 	describe("the 'assign'-function", function() {
+			// 		it("should work for expressions ending with brackets", function() {
+			// 			var fn = compiler.compile("a.b['c']");
+	
+			// 			fn.assign(scope, 123);
+			// 			expect(scope.a.b.c).to.equal(123);
+			// 		});
+	
+			// 		it("should work for expressions with brackets in the middle", function() {
+			// 			var fn = compiler.compile('a["b"].c');
+	
+			// 			fn.assign(scope, 123);
+			// 			expect(scope.a.b.c).to.equal(123);
+			// 		});
+	
+			// 		it("should return the result of the assignment", function() {
+			// 			var fn = compiler.compile('a["b"].c');
+	
+			// 			expect(fn.assign(scope, 123)).to.equal(123);
+			// 		});
+			// 	});
+			// });
+	
+			describe(".cache", function() {
+				it("should be an object by default", function() {
+					expect(compiler.cache).to.be.an("object");
+				});
+	
+				it("should cache the generated function by the expression", function() {
+					var fn = compiler.compile("a");
+	
+					expect(compiler.cache.a).to.equal(fn);
+				});
+	
+				describe("when setting it to false", function() {
+					it("should disable the cache", function() {
+						compiler.cache = false;
+						expect(compiler.compile("a")).to.not.equal(compiler.compile("a"));
+						compiler.cache = Object.create(null);
+					});
 				});
 			});
 		});
-
-		describe("when evaluating operators", function() {
-			it("should return the expected result when using +", function() {
-				evaluate = compiler.compile("1 + 1");
-				expect(evaluate()).to.equal(2);
-			});
-
-			it("should return the expected result when using -", function() {
-				evaluate = compiler.compile("1 - 1");
-				expect(evaluate()).to.equal(0);
-			});
-
-			it("should return the expected result when using *", function() {
-				evaluate = compiler.compile("2 * 2");
-				expect(evaluate()).to.equal(4);
-			});
-
-			it("should return the expected result when using /", function() {
-				evaluate = compiler.compile("4 / 2");
-				expect(evaluate()).to.equal(2);
-			});
-
-			it("should return the expected result when using %", function() {
-				evaluate = compiler.compile("3 % 2");
-				expect(evaluate()).to.equal(1);
-			});
-
-			it("should return the expected result when using &&", function() {
-				evaluate = compiler.compile("true && true");
-				expect(evaluate()).to.equal(true);
-				evaluate = compiler.compile("true && false");
-				expect(evaluate()).to.equal(false);
-				evaluate = compiler.compile("false && false");
-				expect(evaluate()).to.equal(false);
-			});
-
-			it("should return the expected result when using ||", function() {
-				evaluate = compiler.compile("true || true");
-				expect(evaluate()).to.equal(true);
-				evaluate = compiler.compile("true || false");
-				expect(evaluate()).to.equal(true);
-				evaluate = compiler.compile("false || false");
-				expect(evaluate()).to.equal(false);
-			});
-
-			it("should return the expected result when using !", function() {
-				evaluate = compiler.compile("!true");
-				expect(evaluate()).to.equal(false);
-				evaluate = compiler.compile("!false");
-				expect(evaluate()).to.equal(true);
-			});
-
-			/* Ooops, angular doesn't support ++. Maybe someday?
-            it("should return the expected result when using ++", function () {
-                scope.value = 2;
-                evaluate = compiler.compile("value++");
-                expect(evaluate()).to.equal(3);
-                expect(scope.value).to.equal(3);
-            });*/
-
-			/* Ooops, angular doesn't support --. Maybe someday?
-            it("should return the expected result when using --", function () {
-                scope.value = 2;
-                evaluate = compiler.compile("value--");
-                expect(evaluate()).to.equal(1);
-                expect(scope.value).to.equal(1);
-            });*/
-
-			it("should return the expected result when using ?", function() {
-				evaluate = compiler.compile("true? 'it works' : false");
-				expect(evaluate()).to.equal("it works");
-				evaluate = compiler.compile("false? false : 'it works'");
-				expect(evaluate()).to.equal("it works");
-			});
-		});
-
-		describe("using complex expressions", function() {
-			beforeEach(function() {
-				scope.ships = [
-					{
-						pirate: function(str) {
-							return str;
-						}
-					},
-					{
-						pirate: function(str) {
-							return str;
-						}
-					}
-				];
-				scope.index = 0;
-				scope.pi = "pi";
-				scope.Jenny = "Jenny";
-			});
-
-			it("should still be parseable and executable", function() {
-				evaluate = compiler.compile("ships[index][pi + 'rate'](Jenny)");
-				expect(evaluate(scope)).to.equal("Jenny");
-			});
-		});
-
-		describe("when evaluating syntactical errors", function() {
-			it("should give a readable error message", function() {
-				expect(function() {
-					compiler.compile("'unterminated string");
-				}).to.throw(
-					"Lexer Error: Unterminated quote at columns 0-20 ['unterminated string] in expression ['unterminated string]."
-				);
-			});
-
-			it("should give a readable error message", function() {
-				expect(function() {
-					compiler.compile("3 = 4");
-				}).to.throw(
-					'Trying to assign a value to a non l-value'
-				);
-			});
-		});
-
-		describe("when using filters", function() {
-			it("should apply the given filter", function() {
-				evaluate = compiler.compile('1.2345 | format:"000.00"');
-				expect(
-					evaluate({})
-				).to.equal("001.23");
-			});
-		});
-
-		describe("when using list filters", function() {
-			it("should apply the filter filter", function() {
-				evaluate = compiler.compile('[1,2,3,4] | filter: this > 1');
-				expect(
-					evaluate({})
-				).to.deep.equal([2,3,4]);
-			});
-			it("should apply the sort filter", function() {
-				evaluate = compiler.compile('[3,1,4,1,5,9] | sort: this');
-				expect(
-					evaluate({})
-				).to.deep.equal([1,1,3,4,5,9]);
-			});
-			it("should apply the descending sort filter", function() {
-				evaluate = compiler.compile('[3,1,4,1,5,9] | sort: -this');
-				expect(
-					evaluate({})
-				).to.deep.equal([9,5,4,3,1,1]);
-			});
-			it("should apply the sort filter with multiple mixed keys", function() {
-				evaluate = compiler.compile('[{a:"A",b:2},{a:"A",b:1},{a:"A",b:3},{a:"B",b:3},{a:"B",b:1},{a:"B",b:2}] | sort:-a:b');
-				expect(
-					evaluate({})
-				).to.deep.equal([{a:"B",b:1},{a:"B",b:2},{a:"B",b:3},{a:"A",b:1},{a:"A",b:2},{a:"A",b:3}])
-			});
-		});
-
-		describe("when evaluating the same expression multiple times", function() {
-			it("should cache the generated function", function() {
-				expect(compiler.compile("a")).to.equal(compiler.compile("a"));
-			});
-		});
-
-		// describe("for assigning values", function() {
-		// 	beforeEach(function() {
-		// 		scope = {};
-		// 	});
-
-		// 	it("should expose an 'assign'-function", function() {
-		// 		var fn = compiler.compile("a");
-
-		// 		expect(fn.assign).to.be.a("function");
-		// 		fn.assign(scope, 123);
-		// 		expect(scope.a).to.equal(123);
-		// 	});
-
-		// 	describe("the 'assign'-function", function() {
-		// 		it("should work for expressions ending with brackets", function() {
-		// 			var fn = compiler.compile("a.b['c']");
-
-		// 			fn.assign(scope, 123);
-		// 			expect(scope.a.b.c).to.equal(123);
-		// 		});
-
-		// 		it("should work for expressions with brackets in the middle", function() {
-		// 			var fn = compiler.compile('a["b"].c');
-
-		// 			fn.assign(scope, 123);
-		// 			expect(scope.a.b.c).to.equal(123);
-		// 		});
-
-		// 		it("should return the result of the assignment", function() {
-		// 			var fn = compiler.compile('a["b"].c');
-
-		// 			expect(fn.assign(scope, 123)).to.equal(123);
-		// 		});
-		// 	});
-		// });
-
-		describe(".cache", function() {
-			it("should be an object by default", function() {
-				expect(compiler.cache).to.be.an("object");
-			});
-
-			it("should cache the generated function by the expression", function() {
-				var fn = compiler.compile("a");
-
-				expect(compiler.cache.a).to.equal(fn);
-			});
-
-			describe("when setting it to false", function() {
-				it("should disable the cache", function() {
-					compiler.cache = false;
-					expect(compiler.compile("a")).to.not.equal(compiler.compile("a"));
-					compiler.cache = Object.create(null);
-				});
-			});
-		});
-	});
-});
+	})
+})

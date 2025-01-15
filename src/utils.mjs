@@ -204,21 +204,12 @@ export function findConstantExpressions (ast, $filter) {
 			ast.toWatch = [ast]
 			break
 		case AST.FilterExpression:
-		case AST.ListKeyFilterExpression:
-		case AST.ListFilterExpression:
 			argsToWatch = []
 			findConstantExpressions(ast.input, $filter)
 			if (!ast.input.constant) {
 				argsToWatch.push.apply(argsToWatch, ast.input.toWatch)
 			}
 			allConstants = true
-			if (ast.type === AST.ListFilterExpression) {
-				findConstantExpressions(ast.lambda, $filter)
-				if (!ast.lambda.constant) {
-					allConstants = false
-					argsToWatch.push.apply(argsToWatch, ast.lambda.toWatch)
-				}
-			}
 			ast.arguments.forEach(expr => {
 				findConstantExpressions(expr, $filter)
 				allConstants = allConstants && expr.constant
@@ -228,6 +219,16 @@ export function findConstantExpressions (ast, $filter) {
 			})
 			ast.constant = allConstants
 			ast.toWatch = argsToWatch
+			break
+		case AST.LambdaExpression:
+			findConstantExpressions(ast.body, $filter)
+			ast.constant = ast.body.constant
+			ast.toWatch = ast.body.toWatch
+			break
+		case AST.SortKeyExpression:
+			findConstantExpressions(ast.key, $filter)
+			ast.constant = ast.key.constant
+			ast.toWatch = ast.key.toWatch
 			break
 		case AST.AssignmentExpression:
 			findConstantExpressions(ast.left, $filter)
