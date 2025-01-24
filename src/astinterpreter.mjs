@@ -1,5 +1,5 @@
 import { isConstant, isDefined, isLiteral, isString, isNumber, getStringValue, ifDefined, plusFn, assignableAST, isAssignable, getInputs, findConstantExpressions, noop } from "./utils.mjs";
-import { AST } from "./parser.mjs";
+import { AST } from "./ast.mjs";
 
 export class ASTInterpreter {
 	constructor (astBuilder, $filter) {
@@ -9,13 +9,13 @@ export class ASTInterpreter {
 
 	compile (expression) {
 		const self = this
-		const ast = this.astBuilder.ast_expr(expression)
+		const ast = this.astBuilder.ast(expression)
 		const expressions = []
 		const astProg = ast && ast.type === AST.Program
 		  ? ast
 			: { type: AST.Program, body: (
 				ast
-					? [{ type: AST.ExpressionStatement, expression: ast }]
+					? [{ type: AST.ContentField, expression: ast }]
 					: []
 			) }
 		if (ast) {
@@ -144,7 +144,7 @@ export class ASTInterpreter {
 						: value
 				}
 			case AST.LambdaExpression:
-				lambda = self.recurse(ast.body)
+				lambda = self.recurse(ast.expression)
 				return () => lambda
 			case AST.SortKeyExpression:
 				lambda = self.recurse(ast.key)

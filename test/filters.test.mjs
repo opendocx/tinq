@@ -1,31 +1,16 @@
-import { Lexer, Parser, Compiler } from '../src/index.mjs'
+import { Compiler } from '../src/index.mjs'
 import chai from 'chai'
 var expect = chai.expect
 var assert = chai.assert
-var expressions = { Lexer, Parser }
 
 chai.config.includeStack = true;
-
-var compilerOptions = {
-	csp: false, // csp == true uses interpreter instead of compiler (interesting for test/debug, but otherwise why?)
-	expensiveChecks: true,
-	includeLocation: true,
-	literals: {
-		true: true,
-		false: false,
-		null: null,
-		undefined: undefined,
-	}
-	//isIdentifierStart: undefined, //isFunction(identStart) && identStart,
-	//isIdentifierContinue: undefined //isFunction(identContinue) && identContinue
-}
 
 var testPhases = ['interpreter', 'compiler']
 
 describe("YEvaluate Filters", function() {
 
   testPhases.forEach(phase => {
-    compilerOptions.csp = (phase === 'interpreter')
+    const compilerOptions = { interpreter: (phase === 'interpreter') }
 
     describe(phase, function() {
       var scope

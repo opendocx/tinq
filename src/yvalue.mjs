@@ -180,7 +180,7 @@ export class Yvalue {
           frame = frame.parent
         }
         return {
-          type: AST.ExpressionStatement,
+          type: AST.ContentField,
           expression: compiledVirtual.ast,
           text: compiledVirtual.normalized,
           data: this,

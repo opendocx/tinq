@@ -1,13 +1,15 @@
-import { createMap } from './utils.mjs';
+import { createMap } from './utils.mjs'
+import { TemplateParser } from './templateparser.mjs'
 import { Lexer } from './lexer.mjs'
-import { Parser, AST } from './parser.mjs';
+import { Parser } from './parser.mjs'
+import { AST } from './ast.mjs'
 
-export { Lexer, Parser, AST }
+export { Lexer, Parser, TemplateParser as Templater, AST }
 
 const defaultParserOptions = {
-	csp: false, // csp == true uses interpreter instead of compiler (interesting for test/debug, but otherwise why?)
+	interpreter: false, // true uses interpreter instead of compiler
 	expensiveChecks: true,
-	includeLocation: true,
+	includeLocation: false,
 	literals: {
 		true: true,
 		false: false,
@@ -29,11 +31,16 @@ const untypedDefault = {
 }
 
 export class Compiler {
-	constructor (typeDefs = [untypedDefault], parseOptions = defaultParserOptions) {
+	constructor (typeDefs = [untypedDefault], parseOptions = {}) {
+		const options = { ...defaultParserOptions }
+		for (const prop of Object.keys(parseOptions)) {
+			options[prop] = parseOptions[prop]
+		}
 		const typeDict = this.typeDict = {}
 		typeDefs.forEach(typeDef => typeDict[typeDef.name] = typeDef)
 		this.lexer = new Lexer(defaultLexerOptions)
-		this.parser = new Parser(this.lexer, typeDict, parseOptions)
+		this.parser = new Parser(this.lexer, typeDict, options)
+		this.templater = new TemplateParser(this.parser)
 		/**
 		 * A cache containing all compiled functions. The src is used as key.
 		 * Set this to false to disable the cache.

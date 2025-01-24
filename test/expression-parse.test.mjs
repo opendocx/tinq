@@ -91,7 +91,7 @@ describe('Parsing expressions ', function () {
         arguments: [
           {
             type: 'LambdaExpression',
-            body: { type: 'ThisExpression', loc: { start: { column: 43 }, end: { column: 47 } } }, // in yatte this was a LocalsExpression instead??
+            expression: { type: 'ThisExpression', loc: { start: { column: 43 }, end: { column: 47 } } }, // in yatte this was a LocalsExpression instead??
           },
         ],
       })
@@ -115,7 +115,7 @@ describe('Parsing expressions ', function () {
       arguments: [
         {
           type: 'LambdaExpression',
-          body: {
+          expression: {
             type: 'FilterExpression',
             input: { type: 'Identifier', name: 'Children' },
             filter: { type: 'Identifier', name: 'any' },
@@ -124,7 +124,7 @@ describe('Parsing expressions ', function () {
             arguments: [
               {
                 type: 'LambdaExpression',
-                body: {
+                expression: {
                   type: 'BinaryExpression',
                   operator: '>',
                   left: { type: 'Identifier', name: 'Birthdate' },
@@ -167,7 +167,7 @@ describe('Parsing expressions ', function () {
       arguments: [
         {
           type: 'LambdaExpression',
-          body: {
+          expression: {
             type: 'FilterExpression',
             input: {
               type: 'MemberExpression',
@@ -181,7 +181,7 @@ describe('Parsing expressions ', function () {
             arguments: [
               {
                 type: 'LambdaExpression',
-                body: { type: 'Identifier', name: 'prop3' },
+                expression: { type: 'Identifier', name: 'prop3' },
               },
             ],
           },
@@ -305,8 +305,8 @@ describe('Parsing expressions ', function () {
     it('correctly normalizes and serializes nested rtl list filters (2)', function () {
       const ast = compiler.parse('(a|any:b)|any:c') // even though this expr is nonsensical, it should still parse
       assert.strictEqual(ast.input.input.name, 'a', "Parse fail")
-      assert.strictEqual(ast.input.arguments[0].body.name, 'b', "Parse fail")
-      assert.strictEqual(ast.arguments[0].body.name, 'c', "Parse fail")
+      assert.strictEqual(ast.input.arguments[0].expression.name, 'b', "Parse fail")
+      assert.strictEqual(ast.arguments[0].expression.name, 'c', "Parse fail")
       const normalized = AST.serialize(ast) // ... and the parentheses should survive the parse/serialization
       assert.deepStrictEqual(normalized, '(a|any:b)|any:c', "Serialization fail")
     })
@@ -316,12 +316,12 @@ describe('Parsing expressions ', function () {
       // but because no RTLs are adjacent to other RTLs, the RTL doesn't do anything and it's all
       // stacked up the same as if everything were LTR
       assert.strictEqual(ast.filter.name, 'map')
-      assert.strictEqual(ast.arguments[0].body.name, 'f')
+      assert.strictEqual(ast.arguments[0].expression.name, 'f')
       assert.strictEqual(ast.input.filter.name, 'any')
-      assert.strictEqual(ast.input.arguments[0].body.name, 'e')
+      assert.strictEqual(ast.input.arguments[0].expression.name, 'e')
       assert.strictEqual(ast.input.input.filter.name, 'map')
-      assert.strictEqual(ast.input.input.arguments[0].body.name, 'd')
-      assert.strictEqual(ast.input.input.input.arguments[0].body.name, 'c')
+      assert.strictEqual(ast.input.input.arguments[0].expression.name, 'd')
+      assert.strictEqual(ast.input.input.input.arguments[0].expression.name, 'c')
       // etc.
       const normalized = AST.serialize(ast)
       assert.deepStrictEqual(normalized, 'a|map:b|any:c|map:d|any:e|map:f', "Bad normalization")
@@ -331,11 +331,11 @@ describe('Parsing expressions ', function () {
       const ast = compiler.parse('a|map:b|map:c|any:d|any:e|any:f') // map is LTR, any is RTL
       assert.strictEqual(ast.filter.name, 'any')
       assert.strictEqual(ast.input.input.input.name, 'a')
-      assert.strictEqual(ast.input.input.arguments[0].body.name, 'b')
-      assert.strictEqual(ast.input.arguments[0].body.name, 'c')
-      assert.strictEqual(ast.arguments[0].body.input.name, 'd')
-      assert.strictEqual(ast.arguments[0].body.arguments[0].body.input.name, 'e')
-      assert.strictEqual(ast.arguments[0].body.arguments[0].body.arguments[0].body.name, 'f')
+      assert.strictEqual(ast.input.input.arguments[0].expression.name, 'b')
+      assert.strictEqual(ast.input.arguments[0].expression.name, 'c')
+      assert.strictEqual(ast.arguments[0].expression.input.name, 'd')
+      assert.strictEqual(ast.arguments[0].expression.arguments[0].expression.input.name, 'e')
+      assert.strictEqual(ast.arguments[0].expression.arguments[0].expression.arguments[0].expression.name, 'f')
       const normalized = AST.serialize(ast)
       assert.deepStrictEqual(normalized, 'a|map:b|map:c|any:d|any:e|any:f', "Bad normalization")
     })
@@ -344,11 +344,11 @@ describe('Parsing expressions ', function () {
       const ast = compiler.parse('a|map:(b|map:(c|any:d))|any:e|any:f') // map is LTR, any is RTL
       assert.strictEqual(ast.filter.name, 'any')
       assert.strictEqual(ast.input.input.name, 'a')
-      assert.strictEqual(ast.input.arguments[0].body.input.name, 'b')
-      assert.strictEqual(ast.input.arguments[0].body.arguments[0].body.input.name, 'c')
-      assert.strictEqual(ast.input.arguments[0].body.arguments[0].body.arguments[0].body.name, 'd')
-      assert.strictEqual(ast.arguments[0].body.input.name, 'e')
-      assert.strictEqual(ast.arguments[0].body.arguments[0].body.name, 'f')
+      assert.strictEqual(ast.input.arguments[0].expression.input.name, 'b')
+      assert.strictEqual(ast.input.arguments[0].expression.arguments[0].expression.input.name, 'c')
+      assert.strictEqual(ast.input.arguments[0].expression.arguments[0].expression.arguments[0].expression.name, 'd')
+      assert.strictEqual(ast.arguments[0].expression.input.name, 'e')
+      assert.strictEqual(ast.arguments[0].expression.arguments[0].expression.name, 'f')
       const normalized = AST.serialize(ast)
       assert.deepStrictEqual(normalized, 'a|map:(b|map:(c|any:d))|any:e|any:f', "Bad normalization")
     })

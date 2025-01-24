@@ -1,4 +1,4 @@
-import { AST } from "./parser.mjs";
+import { AST } from "./ast.mjs";
 
 /**
  * Creates a new object without a prototype. This object is useful for lookup without having to
@@ -221,9 +221,9 @@ export function findConstantExpressions (ast, $filter) {
 			ast.toWatch = argsToWatch
 			break
 		case AST.LambdaExpression:
-			findConstantExpressions(ast.body, $filter)
-			ast.constant = ast.body.constant
-			ast.toWatch = ast.body.toWatch
+			findConstantExpressions(ast.expression, $filter)
+			ast.constant = ast.expression.constant
+			ast.toWatch = ast.expression.toWatch
 			break
 		case AST.SortKeyExpression:
 			findConstantExpressions(ast.key, $filter)

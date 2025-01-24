@@ -1,5 +1,5 @@
 import { isConstant, isDefined, isLiteral, isString, isNumber, getStringValue, ifDefined, plusFn, assignableAST, isAssignable, getInputs, findConstantExpressions, noop } from "./utils.mjs";
-import { AST } from "./parser.mjs";
+import { AST } from "./ast.mjs";
 
 export class ASTCompiler {
   constructor (astBuilder, $filter) {
@@ -12,7 +12,7 @@ export class ASTCompiler {
 
 	compile (expression) {
 		const self = this
-		const ast = this.astBuilder.ast_expr(expression)
+		const ast = this.astBuilder.ast(expression)
 		this.state = {
 			nextId: 0,
 			filters: {},
@@ -31,7 +31,7 @@ export class ASTCompiler {
 				self.state[lkey] = { vars: [], body: [], own: {} }
 				self.state.computing = lkey
 				const lid = self.nextId()
-				self.recurse(lnode.type === AST.SortKeyExpression ? lnode.key : lnode.body, lid)
+				self.recurse(lnode.type === AST.SortKeyExpression ? lnode.key : lnode.expression, lid)
 				self.return_(lid)
 			}
 			// let assignable
@@ -65,7 +65,7 @@ export class ASTCompiler {
 			if (ast.type === AST.Program) {
 				this.recurse(ast)
 			} else {
-				this.recurse({ type: AST.Program, body: [{ type: AST.ExpressionStatement, expression: ast }] })
+				this.recurse({ type: AST.Program, body: [{ type: AST.ContentField, expression: ast }] })
 			}
 		}
 		// The build and minification steps remove the string "use strict" from the code, but this is done using a regex.
@@ -606,25 +606,23 @@ function * FindLambdas (ast) {
 		case AST.Literal:
 		case AST.ThisExpression:
 		case AST.LocalsExpression:
-		case AST.EmptyStatement:
+		case AST.NoOp:
 			break
     case AST.Program:
-    case AST.BlockStatement:
-			for (const statement of ast.body) {
-				yield * FindLambdas(statement)
-			}
+		case AST.TemplateBlock:
+			for (const elem of ast.body) yield * FindLambdas(elem)
 		  break
-    case AST.ExpressionStatement:
+    case AST.ContentField:
 			yield * FindLambdas(ast.expression)
 			break
-    case AST.IfStatement:
+    case AST.ConditionalBlock:
 			yield * FindLambdas(ast.test)
 			yield * FindLambdas(ast.consequent)
 			if (ast.alternate) yield * FindLambdas(ast.alternate)
 			break
-    case AST.ForOfStatement:
-			yield * FindLambdas(ast.right)
-			yield * FindLambdas(ast.body)
+    case AST.ListBlock:
+			yield * FindLambdas(ast.expression)
+			for (const elem of ast.body) yield * FindLambdas(elem)
 			break
     case AST.MemberExpression:
 			yield * FindLambdas(ast.object)
@@ -632,18 +630,14 @@ function * FindLambdas (ast) {
       break
     case AST.CallExpression:
 			yield * FindLambdas(ast.callee)
-			for (const argument of ast.arguments) {
-				yield * FindLambdas(argument)
-			}
+			for (const argument of ast.arguments) yield * FindLambdas(argument)
 			break
     case AST.FilterExpression:
 			yield * FindLambdas(ast.input)
-			for (const argument of ast.arguments) {
-				yield * FindLambdas(argument)
-			}
+			for (const argument of ast.arguments) yield * FindLambdas(argument)
 			break
 		case AST.LambdaExpression:
-			yield * FindLambdas(ast.body)
+			yield * FindLambdas(ast.expression)
 			yield ast
 			break
 		case AST.SortKeyExpression:
@@ -651,14 +645,10 @@ function * FindLambdas (ast) {
 			yield ast
 			break
     case AST.ArrayExpression:
-			for (const elem of ast.elements) {
-				yield * FindLambdas(elem)
-			}
+			for (const elem of ast.elements) yield * FindLambdas(elem)
 			break
     case AST.ObjectExpression:
-			for (const prop of ast.properties) {
-				yield * FindLambdas(prop)
-			}
+			for (const prop of ast.properties) yield * FindLambdas(prop)
 			break
     case AST.Property:
 			yield * FindLambdas(ast.value)
