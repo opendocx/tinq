@@ -1,6 +1,5 @@
 import path from 'path'
 import { fileURLToPath } from 'node:url'
-import { Parser, Lexer, AST } from '../src/index.mjs'
 import chai from 'chai'
 import { TemplateLexer, ChunkMode } from '../src/templatelexer.mjs'
 import { readJSONFile } from './test-utils.mjs'

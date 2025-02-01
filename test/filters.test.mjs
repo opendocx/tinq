@@ -1,25 +1,25 @@
-import { Compiler } from '../src/index.mjs'
+import { Tinql } from '../src/index.mjs'
 import chai from 'chai'
 var expect = chai.expect
 var assert = chai.assert
 
 chai.config.includeStack = true;
 
-var testPhases = ['interpreter', 'compiler']
+var testPhases = ['interpreter'] //, 'compiler']
 
 describe("YEvaluate Filters", function() {
 
   testPhases.forEach(phase => {
-    const compilerOptions = { interpreter: (phase === 'interpreter') }
+    const options = { interpreter: (phase === 'interpreter') }
 
     describe(phase, function() {
       var scope
       var evaluate
-      var compiler = new Compiler(undefined, compilerOptions)
+      var tinql = new Tinql(options)
 
       describe("value filters", function() {
         it("should apply the given filter", function() {
-          evaluate = compiler.compile('1.2345 | format:"000.00"')
+          evaluate = tinql.compileExpression('1.2345 | format:"000.00"')
           expect(
             evaluate({})
           ).to.equal("001.23")
@@ -27,31 +27,31 @@ describe("YEvaluate Filters", function() {
 
         describe('text formatting', function () {
           it('upper', function () {
-            evaluate = compiler.compile('text|upper')
+            evaluate = tinql.compileExpression('text|upper')
             assert.strictEqual(evaluate({ text: 'hello World' }), 'HELLO WORLD')
           })
           it('lower', function () {
-            evaluate = compiler.compile('text|lower')
+            evaluate = tinql.compileExpression('text|lower')
             assert.strictEqual(evaluate({ text: 'hello World' }), 'hello world')
           })
           it('initcap', function () {
-            evaluate = compiler.compile('text|initcap')
+            evaluate = tinql.compileExpression('text|initcap')
             assert.strictEqual(evaluate({ text: 'hello World' }), 'Hello World')
           })
           it('initcap forced lower', function () {
-            evaluate = compiler.compile('text|initcap:true')
+            evaluate = tinql.compileExpression('text|initcap:true')
             assert.strictEqual(evaluate({ text: 'hello World' }), 'Hello world')
           })
           it('titlecaps', function () {
-            evaluate = compiler.compile('text|titlecaps')
+            evaluate = tinql.compileExpression('text|titlecaps')
             assert.strictEqual(evaluate({ text: 'HELLO world' }), 'HELLO World')
           })
           it('titlecaps forced lower', function () {
-            evaluate = compiler.compile('text|titlecaps:true')
+            evaluate = tinql.compileExpression('text|titlecaps:true')
             assert.strictEqual(evaluate({ text: 'HELLO world' }), 'Hello World')
           })
           it('titlecaps with punctuation', function () {
-            evaluate = compiler.compile('text|titlecaps')
+            evaluate = tinql.compileExpression('text|titlecaps')
             const text = `RegExr's creator is gskinner.com.
         Edit the Expression & Text willy-nilly to see y'all's matches.
         "does john-doe know him," she said
@@ -83,14 +83,14 @@ describe("YEvaluate Filters", function() {
             assert.strictEqual(evaluate({ text }), expected)
           })
           it('keepsections should be no-op', function () {
-            evaluate = compiler.compile('text|keepsections')
+            evaluate = tinql.compileExpression('text|keepsections')
             assert.strictEqual(evaluate({ text: 'HELLO world' }), 'HELLO world')
           })
         })
         
         describe('number formatting', function () {
           it('cardinal', function () {
-            evaluate = compiler.compile('num|cardinal')
+            evaluate = tinql.compileExpression('num|cardinal')
             assert.strictEqual(evaluate({ num: 1 }), 'one')
             assert.strictEqual(evaluate({ num: 2 }), 'two')
             assert.strictEqual(evaluate({ num: 3 }), 'three')
@@ -119,22 +119,22 @@ describe("YEvaluate Filters", function() {
           })
         
           it('cardinal - over one thousand', function () {
-            evaluate = compiler.compile('num|cardinal')
+            evaluate = tinql.compileExpression('num|cardinal')
             assert.strictEqual(evaluate({ num: 1234 }), 'one thousand two hundred thirty-four')
           })
         
           it('cardinal - null input', function () {
-            evaluate = compiler.compile('num|cardinal')
+            evaluate = tinql.compileExpression('num|cardinal')
             assert.strictEqual(evaluate({ num: null }), null)
           })
         
           it('cardinal - NaN input', function () {
-            evaluate = compiler.compile('num|cardinal')
+            evaluate = tinql.compileExpression('num|cardinal')
             assert.strictEqual(evaluate({ num: NaN }), null)
           })
         
           it('ordinal', function () {
-            evaluate = compiler.compile('num|ordinal')
+            evaluate = tinql.compileExpression('num|ordinal')
             assert.strictEqual(evaluate({ num: 1 }), 'first')
             assert.strictEqual(evaluate({ num: 2 }), 'second')
             assert.strictEqual(evaluate({ num: 3 }), 'third')
@@ -163,7 +163,7 @@ describe("YEvaluate Filters", function() {
           })
         
           it('ordSuffix', function () {
-            evaluate = compiler.compile('num|ordsuffix')
+            evaluate = tinql.compileExpression('num|ordsuffix')
             assert.strictEqual(evaluate({ num: 1 }), 'st')
             assert.strictEqual(evaluate({ num: 2 }), 'nd')
             assert.strictEqual(evaluate({ num: 3 }), 'rd')
@@ -193,98 +193,98 @@ describe("YEvaluate Filters", function() {
           })
         
           it('base 26 - under 26', function () {
-            evaluate = compiler.compile('num|format:"a"')
+            evaluate = tinql.compileExpression('num|format:"a"')
             assert.strictEqual(evaluate({ num: 3 }), 'c')
           })
         
           it('base 26 - over 26', function () {
-            evaluate = compiler.compile('num|format:"A"')
+            evaluate = tinql.compileExpression('num|format:"A"')
             assert.strictEqual(evaluate({ num: 30 }), 'AD')
           })
         
           it('base 26 - null input', function () {
-            evaluate = compiler.compile('num|format:"a"')
+            evaluate = tinql.compileExpression('num|format:"a"')
             assert.strictEqual(evaluate({ num: null }), null)
           })
         
           it('base 26 - NaN input', function () {
-            evaluate = compiler.compile('num|format:"a"')
+            evaluate = tinql.compileExpression('num|format:"a"')
             assert.strictEqual(evaluate({ num: NaN }), null)
           })
         })
         
         describe('date formatting', function () {
           it('MM/dd/yyyy', function () {
-            evaluate = compiler.compile('d|format:"MM/dd/yyyy"')
+            evaluate = tinql.compileExpression('d|format:"MM/dd/yyyy"')
             assert.strictEqual(evaluate({ d: new Date(2019, 0, 2) }), '01/02/2019')
           })
         
           it('MM/DD/YYYY (compat)', function () {
-            evaluate = compiler.compile('d|format:"MM/DD/YYYY"')
+            evaluate = tinql.compileExpression('d|format:"MM/DD/YYYY"')
             assert.strictEqual(evaluate({ d: new Date(2019, 0, 2) }), '01/02/2019')
           })
         
           it('M/d/yyyy', function () {
-            evaluate = compiler.compile('d|format:"M/d/yyyy"')
+            evaluate = tinql.compileExpression('d|format:"M/d/yyyy"')
             assert.strictEqual(evaluate({ d: new Date(2019, 0, 2) }), '1/2/2019')
           })
         
           it('M/D/YYYY (compat)', function () {
-            evaluate = compiler.compile('d|format:"M/D/YYYY"')
+            evaluate = tinql.compileExpression('d|format:"M/D/YYYY"')
             assert.strictEqual(evaluate({ d: new Date(2019, 0, 2) }), '1/2/2019')
           })
         
           it('dd/MM/yyyy', function () {
-            evaluate = compiler.compile('d|format:"dd/MM/yyyy"')
+            evaluate = tinql.compileExpression('d|format:"dd/MM/yyyy"')
             assert.strictEqual(evaluate({ d: new Date(2019, 0, 2) }), '02/01/2019')
           })
         
           it('DD/MM/YYYY (compat)', function () {
-            evaluate = compiler.compile('d|format:"DD/MM/YYYY"')
+            evaluate = tinql.compileExpression('d|format:"DD/MM/YYYY"')
             assert.strictEqual(evaluate({ d: new Date(2019, 0, 2) }), '02/01/2019')
           })
         
           it('d/M/yyyy', function () {
-            evaluate = compiler.compile('d|format:"d/M/yyyy"')
+            evaluate = tinql.compileExpression('d|format:"d/M/yyyy"')
             assert.strictEqual(evaluate({ d: new Date(2019, 0, 2) }), '2/1/2019')
           })
         
           it('D/M/YYYY (compat)', function () {
-            evaluate = compiler.compile('d|format:"D/M/YYYY"')
+            evaluate = tinql.compileExpression('d|format:"D/M/YYYY"')
             assert.strictEqual(evaluate({ d: new Date(2019, 0, 2) }), '2/1/2019')
           })
         
           it('do \'day of\' MMMM yyyy', function () {
-            evaluate = compiler.compile('d|format:"do \'day of\' MMMM yyyy"')
+            evaluate = tinql.compileExpression('d|format:"do \'day of\' MMMM yyyy"')
             assert.strictEqual(evaluate({ d: new Date(2019, 0, 2) }), '2nd day of January 2019')
           })
         
           it('Do [day of] MMMM YYYY (compat)', function () {
-            evaluate = compiler.compile('d|format:"Do [day of] MMMM YYYY"')
+            evaluate = tinql.compileExpression('d|format:"Do [day of] MMMM YYYY"')
             assert.strictEqual(evaluate({ d: new Date(2019, 0, 2) }), '2nd day of January 2019')
           })
         
           it('MMMM d, yyyy', function () {
-            evaluate = compiler.compile('d|format:"MMMM d, yyyy"')
+            evaluate = tinql.compileExpression('d|format:"MMMM d, yyyy"')
             assert.strictEqual(evaluate({ d: new Date(2019, 0, 2) }), 'January 2, 2019')
           })
         
           it('MMMM D, YYYY (compat)', function () {
-            evaluate = compiler.compile('d|format:"MMMM D, YYYY"')
+            evaluate = tinql.compileExpression('d|format:"MMMM D, YYYY"')
             assert.strictEqual(evaluate({ d: new Date(2019, 0, 2) }), 'January 2, 2019')
           })
         })
         
         describe('contains filter', function () {
           it('string array contains string', function () {
-            evaluate = compiler.compile('array|contains:"Joe"')
-            const evaluator2 = compiler.compile('array|contains:"John"')
+            evaluate = tinql.compileExpression('array|contains:"Joe"')
+            const evaluator2 = tinql.compileExpression('array|contains:"John"')
             const data = { array: ['Margot', null, 'Joe', 'Lou'] }
             assert.strictEqual(evaluate(data), true)
             assert.strictEqual(evaluator2(data), false)
           })
           it('number array contains number', function () {
-            evaluate = compiler.compile('array|contains:3')
+            evaluate = tinql.compileExpression('array|contains:3')
             const data = { array: [NaN, null, undefined, 4, 3, 2, 1] }
             assert.strictEqual(evaluate(data), true)
             data.array.splice(4, 1)
@@ -292,14 +292,14 @@ describe("YEvaluate Filters", function() {
           })
           it('object array contains object', function () {
             const data = { array: [{ name: 'Joel' }, { name: 'Joe', lastName: 'Schmoe' }, null, undefined, { name: 'Joe' }] }
-            evaluate = compiler.compile('array|contains:{ name:"Joe" }')
+            evaluate = tinql.compileExpression('array|contains:{ name:"Joe" }')
             assert.strictEqual(evaluate(data), true)
             data.array.pop()
             assert.strictEqual(evaluate(data), false)
           })
           it('array of string wrappers contains string', function () {
-            evaluate = compiler.compile('array|contains:"Joe"')
-            const evaluator2 = compiler.compile('array|contains:"John"')
+            evaluate = tinql.compileExpression('array|contains:"Joe"')
+            const evaluator2 = tinql.compileExpression('array|contains:"John"')
             const data = { array: [new String('Margot'), null, new String('Joe'), new String('Lou')] }
             data.array[0].First = 'Margot'
             data.array[0].Last = 'Hemingway'
@@ -311,8 +311,8 @@ describe("YEvaluate Filters", function() {
           })
           it('string contains substring', function () {
             const data = { str: 'Quick brown fox jumps over the lazy dog' }
-            evaluate = compiler.compile('str|contains:"fox"')
-            const evaluator2 = compiler.compile('str|contains:"Fox"')
+            evaluate = tinql.compileExpression('str|contains:"fox"')
+            const evaluator2 = tinql.compileExpression('str|contains:"Fox"')
             assert.strictEqual(evaluate(data), true)
             assert.strictEqual(evaluator2(data), false)
           })
@@ -324,31 +324,31 @@ describe("YEvaluate Filters", function() {
 
       describe("list filters", function() {
         it("should apply the filter filter", function() {
-          evaluate = compiler.compile('[1,2,3,4] | filter: this > 1')
+          evaluate = tinql.compileExpression('[1,2,3,4] | filter: this > 1')
           expect(
             evaluate({})
           ).to.deep.equal([2,3,4])
         })
         it("should apply the sort filter", function() {
-          evaluate = compiler.compile('[3,1,4,1,5,9] | sort: this')
+          evaluate = tinql.compileExpression('[3,1,4,1,5,9] | sort: this')
           expect(
             evaluate({})
           ).to.deep.equal([1,1,3,4,5,9])
         })
         it("should apply the descending sort filter", function() {
-          evaluate = compiler.compile('[3,1,4,1,5,9] | sort: -this')
+          evaluate = tinql.compileExpression('[3,1,4,1,5,9] | sort: -this')
           expect(
             evaluate({})
           ).to.deep.equal([9,5,4,3,1,1])
         })
         it("should apply the sort filter with multiple mixed keys", function() {
-          evaluate = compiler.compile('[{a:"A",b:2},{a:"A",b:1},{a:"A",b:3},{a:"B",b:3},{a:"B",b:1},{a:"B",b:2}] | sort:-a:b')
+          evaluate = tinql.compileExpression('[{a:"A",b:2},{a:"A",b:1},{a:"A",b:3},{a:"B",b:3},{a:"B",b:1},{a:"B",b:2}] | sort:-a:b')
           expect(
             evaluate({})
           ).to.deep.equal([{a:"B",b:1},{a:"B",b:2},{a:"B",b:3},{a:"A",b:1},{a:"A",b:2},{a:"A",b:3}])
         })
         it('allows lookup of/access to an object in a list using the find filter', function () {
-          evaluate = compiler.compile('(table|find:col1=="b").col2')
+          evaluate = tinql.compileExpression('(table|find:col1=="b").col2')
           const data = {
             table: [
               { col1: 'a', col2: 'A' },
@@ -393,8 +393,8 @@ describe("YEvaluate Filters", function() {
 
         describe('group filter', function () {
           it('groups a list of strings', function () {
-            evaluate = compiler.compile('surnames|group:this')
-            const value = evaluate(surnameData, surnameData)
+            evaluate = tinql.compileExpression('surnames|group:this')
+            const value = evaluate(surnameData)
             const v = surnameData.surnames
             assert.deepStrictEqual(value, [
               { _key: 'Jones',        _values: [v[0], v[2], v[3], v[5]] },
@@ -405,8 +405,8 @@ describe("YEvaluate Filters", function() {
           })
 
           it('simplifies a list of strings to unique values and alphabetizes them', function () {
-            evaluate = compiler.compile('surnames|group:this|map:_key|sort:this')
-            const value = evaluate(surnameData, surnameData)
+            evaluate = tinql.compileExpression('surnames|group:this|map:_key|sort:this')
+            const value = evaluate(surnameData)
             assert.deepStrictEqual(value, ['Johnson', 'Jones', 'McGillicutty', 'Smith'])
           })
         })

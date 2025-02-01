@@ -1,18 +1,17 @@
-import { isConstant, isDefined, isLiteral, isString, isNumber, getStringValue, ifDefined, plusFn, assignableAST, isAssignable, getInputs, findConstantExpressions, noop } from "./utils.mjs";
+import { isConstant, isDefined, isLiteral, isString, isNumber, getStringValue, ifDefined, plusFn, assignableAST, isAssignable, getInputs, findConstantExpressions, noop } from "./utils.mjs"
+import { pushScope } from "./scope.mjs"
 import { AST } from "./ast.mjs";
 
 export class ASTCompiler {
-  constructor (astBuilder, $filter) {
-    this.astBuilder = astBuilder
-    this.$filter = $filter
+  constructor (filters) {
+    this.filters = filters
     this.USE = "use"
     this.STRICT = "strict"
     this.stringEscapeRegex = /[^ a-zA-Z0-9]/g
   }
 
-	compile (expression) {
+	compile (ast) {
 		const self = this
-		const ast = this.astBuilder.ast(expression)
 		this.state = {
 			nextId: 0,
 			filters: {},
@@ -22,16 +21,26 @@ export class ASTCompiler {
 		}
 		let extra = ""
 		if (ast) {
-			findConstantExpressions(ast, self.$filter)
+			findConstantExpressions(ast, self.filters)
 			this.stage = "lambdas"
-			let l = 0
+			let index = 0
 			for (const lnode of FindLambdas(ast)) {
-				const lkey = 'lambda' + ++l
+				const lkey = 'lambda' + ++index
 				lnode._lkey = lkey
 				self.state[lkey] = { vars: [], body: [], own: {} }
 				self.state.computing = lkey
-				const lid = self.nextId()
-				self.recurse(lnode.type === AST.SortKeyExpression ? lnode.key : lnode.expression, lid)
+				// pre-processing for each lambda
+				let rnode, init
+				if (lnode.type === AST.SortKeyExpression) rnode = lnode.key
+				else if (lnode.type === AST.LambdaExpression) rnode = lnode.expression
+				else { // it's a content block inside a list field
+					rnode = lnode
+					init = '[]'
+				}
+				const lid = self.nextId(false, init)
+				const cinfo = {}
+				self.recurse(rnode, lid, cinfo)
+				lnode._ckey = cinfo.context
 				self.return_(lid)
 			}
 			// let assignable
@@ -61,12 +70,9 @@ export class ASTCompiler {
 		this.state.computing = "fn"
 		this.stage = "main"
 		if (ast) {
-			// wrap AST in program body (if necessary) because that's what the compiler expects
-			if (ast.type === AST.Program) {
-				this.recurse(ast)
-			} else {
-				this.recurse({ type: AST.Program, body: [{ type: AST.ContentField, expression: ast }] })
-			}
+			const intoId = this.nextId(false, ast.type === AST.Program ? '[]' : undefined)
+			this.recurse(ast, intoId)
+			this.return_(ast.type === AST.Program ? intoId + '.join("")' : intoId)
 		}
 		// The build and minification steps remove the string "use strict" from the code, but this is done using a regex.
 		// This is a workaround for this until we do a better job at only removing the prefix only when we should.
@@ -79,12 +85,13 @@ export class ASTCompiler {
 		append(fns, 'return fn')
 		// eslint-disable-next-line no-new-func
 		const fn = new Function(
-			"$filter",
-			"getStringValue",
-			"ifDefined",
-			"plus",
-			fns.join('\n')
-		)(this.$filter, getStringValue, ifDefined, plusFn)
+			"flt",
+			"gsv",
+			"ifd",
+			"pls",
+			"ps",
+			fns.join('\n') // last argument to Function() is function body; each prior is an argument name
+		)(this.filters, getStringValue, ifDefined, plusFn, pushScope)
 
 		this.state = this.stage = undefined
 		fn.ast = ast
@@ -97,7 +104,7 @@ export class ASTCompiler {
 
 	watchFns () {
 		const result = []
-		const fns = this.state.inputs
+		const fns = this.state.inputs // currently always empty because inputs stage & watch finding is commented out
 		const self = this
 		fns.forEach(name => {
 			result.push(`var ${name}=${self.generateFunction(name, "s")}`)
@@ -116,7 +123,7 @@ export class ASTCompiler {
 		const parts = []
 		const self = this
 		for (const [filter, id] of Object.entries(this.state.filters)) {
-			parts.push(id + "=$filter(" + self.escape(filter) + ")")
+			parts.push(id + "=flt(" + self.escape(filter) + ")")
 		}
 		if (parts.length) return `var ${parts.join(",")};`
 		return ""
@@ -132,71 +139,92 @@ export class ASTCompiler {
 		return this.state[section].body.join("")
 	}
 
-	recurse (
-		ast,
-		intoId,
-		nameId,
-		recursionFn,
-		create,
-		skipWatchIdCheck
-	) {
+	/**
+	 * transpiles the given ast node into JavaScript code that can execute in the browser or NodeJS
+	 * 
+	 * @param {object} ast node
+	 * @param {string} intoId id of the variable (in the target code) in which the result of the current operation should
+	 *                        be stored
+	 * @param {object?} nameInfo if the current operation needs to return contextual (scope) information, nameInfo will
+	 *                           be an object through which that contextual information can flow back up the call stack.
+	 * @param {*} recursionFn for all expressions and sub-expressions that ultimately compile down to strings (containing
+	 *                        JavaScript), this callback (if specified) is invoked as the last thing after that
+	 *                        compilation is complete. Not currently called for template & field nodes.
+	 * @param {*} create 
+	 * @param {*} skipWatchIdCheck 
+	 * @returns void. The recurse method alters the state of this ASTCompiler instance, such that after the call to
+	 * recurse returns, the generateFunction() method can be used to finish the code generation.
+	 */
+	recurse (ast, intoId, nameInfo, recursionFn, create, skipWatchIdCheck) {
+		if (!ast) return
 		const self = this
-		let left,
-			right,
-			args,
-			lambda,
-			expression
+		let left, right, args, obj, expression
 		recursionFn = recursionFn || noop
 		if (!skipWatchIdCheck && isDefined(ast.watchId)) {
 			intoId = intoId || this.nextId()
 			this.if_(
 				"i",
-				this.lazyAssign(intoId, this.computedMember("i", ast.watchId)),
-				this.lazyRecurse(ast, intoId, nameId, recursionFn, create, true)
+				this.lazySetValue(intoId, this.computedMember("i", ast.watchId)),
+				this.lazyRecurse(ast, intoId, nameInfo, recursionFn, create, true)
 			)
 			return
 		}
 		switch (ast.type) {
 			case AST.Program:
-				ast.body.forEach((expression, pos) => {
-					self.recurse(expression.expression, undefined, undefined, function (expr) {
-						right = expr
-					})
-					if (pos !== ast.body.length - 1) {
-						self.current().body.push(right, ";")
-					} else {
-						self.return_(right)
-					}
-				})
+			case AST.TemplateBlock:
+				requireBlock(intoId)
+				ast.body.forEach(elem => self.recurse(elem, intoId))
+				break
+			case AST.TemplateElement:
+				self.pushElement(intoId, this.escape(ast.text))
+				break
+			case AST.ContentField:
+				self.recurse(ast.expression, undefined, undefined, expr => right = expr)
+				self.pushElement(intoId, right)
+				break
+			case AST.ConditionalField:
+				requireBlock(intoId)
+				expression = this.nextId() // right == var to hold test result
+				self.recurse(ast.test, expression)
+				self.if_(
+					expression,
+					self.lazyRecurse(ast.consequent, intoId),
+					ast.alternate && self.lazyRecurse(ast.alternate, intoId),
+				)
+				break
+			case AST.ListField:
+				requireBlock(intoId)
+				expression = self.nextId() // the list value itself
+				obj = {} // to receive the list value's context info
+				self.recurse(ast.expression, expression, obj) // get list value
+				right = self.setValue(self.nextId(), self.generateFunction(ast.content._lkey, "s,l")) // list content lambda
+				self.if_(
+					expression + '&&' + expression + '.length',
+					() => self.pushForEach(expression, right, obj.context, intoId)
+				)
 				break
 			case AST.Literal:
 				expression = this.escape(ast.value)
-				this.assign(intoId, expression)
+				this.setValue(intoId, expression)
 				recursionFn(intoId || expression)
 				break
 			case AST.UnaryExpression:
-				this.recurse(ast.argument, undefined, undefined, function(expr) {
-					right = expr
-				})
-				expression = ast.operator + "(" + this.ifDefined(right, 0) + ")"
-				this.assign(intoId, expression)
+				this.recurse(ast.argument, undefined, undefined, expr => right = expr)
+				expression = ast.operator + "(" + this.ifDefined(right, 0) + ")" // TODO: I don't think these parens are necessary, are they?
+				this.setValue(intoId, expression)
 				recursionFn(expression)
 				break
 			case AST.BinaryExpression:
-				this.recurse(ast.left, undefined, undefined, function(expr) {
-					left = expr
-				})
-				this.recurse(ast.right, undefined, undefined, function(expr) {
-					right = expr
-				})
+				this.recurse(ast.left, undefined, undefined, expr => left = expr)
+				this.recurse(ast.right, undefined, undefined, expr => right = expr)
 				if (ast.operator === "+") {
 					expression = this.plus(left, right)
 				} else if (ast.operator === "-") {
 					expression = this.ifDefined(left, 0) + ast.operator + this.ifDefined(right, 0)
 				} else {
-					expression = "(" + left + ")" + ast.operator + "(" + right + ")"
+					expression = "(" + left + ")" + ast.operator + "(" + right + ")" // todo: use OOP to determine when parens are needed
 				}
-				this.assign(intoId, expression)
+				this.setValue(intoId, expression)
 				recursionFn(expression)
 				break
 			case AST.LogicalExpression:
@@ -219,87 +247,72 @@ export class ASTCompiler {
 				recursionFn(intoId)
 				break
 			case AST.Identifier:
-				intoId = intoId || this.nextId()
-				if (nameId) {
-					nameId.context =
-						self.stage === "inputs"
-							? "s"
-							: this.assign(
-									this.nextId(),
-									this.getHasOwnProperty("l", ast.name) + "?l:s"
-							  )
-					nameId.computed = false
-					nameId.name = ast.name
+				intoId = intoId || self.nextId()
+				if (nameInfo) {
+					left = self.setValue(self.nextId(), self.getScopeOf(ast.name, ast.ns))
+					nameInfo.context = self.stage === "inputs" ? "??" : left
+					nameInfo.computed = false
+					nameInfo.name = ast.name
+					self.setValue(intoId, self.getOwnValue(left, ast.name))
+				} else {
+					self.setValue(intoId, self.getValue(ast.name, ast.ns))
 				}
-				self.if_(
-					self.stage === "inputs" ||
-						self.not(self.getHasOwnProperty("l", ast.name)),
-					function () {
-						self.if_(
-							self.stage === "inputs" ||
-								"s",
-							function() {
-								if (create && create !== 1) {
-									self.if_(
-										self.isNull(self.nonComputedMember("s", ast.name)),
-										self.lazyAssign(self.nonComputedMember("s", ast.name), "{}")
-									)
-								}
-								self.assign(intoId, self.nonComputedMember("s", ast.name))
-							}
-						)
-					},
-					intoId &&
-						self.lazyAssign(intoId, self.nonComputedMember("l", ast.name))
-				)
 				recursionFn(intoId)
 				break
 			case AST.MemberExpression:
-				left = (nameId && (nameId.context = this.nextId())) || this.nextId()
-				intoId = intoId || this.nextId()
+				left = this.nextId() // object will be stored here
+				intoId = intoId || this.nextId() // whole member expression will be stored here
+				obj = {} // we also want context info for the object 
 				self.recurse(
 					ast.object,
 					left,
-					undefined,
+					obj,
 					function () {
 						let member = null
 						if (ast.computed) {
 							right = self.nextId()
 							member = self.computedMember(left, right)
 						} else {
-							member = self.nonComputedMember(left, ast.property.name)
 							right = ast.property.name
+							member = self.nonComputedMember(left, right)
 						}
 						self.if_(
 							self.notNull(left),
 							function () {
+								if (nameInfo) {
+									if (obj.context) {
+										nameInfo.context = self.setValue(self.nextId(), `${obj.context}.po(${left})`)
+									} else {
+										nameInfo.context = left
+									}
+								}
 								if (ast.computed) {
 									self.recurse(ast.property, right)
-									self.getStringValue(right)
+									self.setStringValue(right)
 									if (create && create !== 1) {
-										self.if_(self.not(member), self.lazyAssign(member, "{}"))
+										self.if_(self.not(member), self.lazySetValue(member, "{}"))
 									}
-									self.assign(intoId, member)
-									if (nameId) {
-										nameId.computed = true
-										nameId.name = right
+									self.setValue(intoId, member)
+									if (nameInfo) {
+										nameInfo.computed = true
+										nameInfo.name = right
 									}
 								} else {
 									if (create && create !== 1) {
 										self.if_(
 											self.isNull(member),
-											self.lazyAssign(member, "{}")
+											self.lazySetValue(member, "{}")
 										)
 									}
-									self.assign(intoId, member)
-									if (nameId) {
-										nameId.computed = false
-										nameId.name = ast.property.name
+									self.setValue(intoId, member)
+									if (nameInfo) {
+										nameInfo.computed = false
+										nameInfo.name = ast.property.name
 									}
 								}
 							},
 							function () {
-								self.assign(intoId, "undefined")
+								self.setValue(intoId, "undefined")
 							}
 						)
 						recursionFn(intoId)
@@ -309,10 +322,10 @@ export class ASTCompiler {
 				break
 			case AST.CallExpression:
 				intoId = intoId || this.nextId()
-				right = self.nextId()
-				left = {}
+				right = self.nextId() // callee value
+				obj = {} // callee contextual info
 				args = []
-				self.recurse(ast.callee, right, left, function () {
+				self.recurse(ast.callee, right, obj, function () {
 					self.if_(
 						self.notNull(right),
 						function () {
@@ -326,17 +339,17 @@ export class ASTCompiler {
 									}
 								)
 							})
-							if (left.name) {
+							if (obj.name) {
 								expression =
-									self.member(left.context, left.name, left.computed) +
+									self.member(obj.context, obj.name, obj.computed) +
 									"(" + args.join(",") + ")"
 							} else {
 								expression = right + "(" + args.join(",") + ")"
 							}
-							self.assign(intoId, expression)
+							self.setValue(intoId, expression)
 						},
 						function () {
-							self.assign(intoId, "undefined")
+							self.setValue(intoId, "undefined")
 						}
 					)
 					recursionFn(intoId)
@@ -346,25 +359,28 @@ export class ASTCompiler {
 				intoId = intoId || this.nextId()
 				right = self.filter(ast.filter.name)
 				args = []
+				obj = ast.lambda ? {} : undefined
 				left = self.nextId()
-				self.recurse(ast.input, left)
+				self.recurse(ast.input, left, obj)
 				args.push(left)
+				if (ast.lambda) {
+					args.push(obj.context || 'undefined')
+				}
 				ast.arguments.forEach(expr => {
-					const argument = self.nextId()
+					const argId = self.nextId()
 					if (expr.type === AST.LambdaExpression || expr.type === AST.SortKeyExpression) {
-						self.assign(argument, self.generateFunction(expr._lkey, "s,l"))
+						self.setValue(argId, self.generateFunction(expr._lkey, "s,l"))
 						if (expr.type === AST.SortKeyExpression && expr.descending) {
-							self.assign(argument + '.descending', 'true')
+							self.setValue(argId + '.descending', 'true') // sets a "descending" property on the sort key lambda function
 						}
 					} else {
-						self.recurse(expr, argument)
+						self.recurse(expr, argId)
 					}
-					args.push(argument)
+					args.push(argId)
 				})
-				// expression = right + "(" + args.join(",") + ")" // original
-				expression = right + ".call(" + right + "," + args.join(",") + ")" // current in angular-expressions
-				// or should the above also work with undefined passed as first arg into .call()?
-				self.assign(intoId, expression)
+				// call the filter function, passing in the arguments assembled above
+				expression = `${right}.call(undefined,${args.join(',')})`
+				self.setValue(intoId, expression)
 				recursionFn(intoId)
 				break
 			case AST.LambdaExpression:
@@ -387,7 +403,7 @@ export class ASTCompiler {
 									self.member(left.context, left.name, left.computed) +
 									ast.operator +
 									right
-								self.assign(intoId, expression)
+								self.setValue(intoId, expression)
 								recursionFn(intoId || expression)
 							}
 						)
@@ -408,14 +424,14 @@ export class ASTCompiler {
 					)
 				})
 				expression = "[" + args.join(",") + "]"
-				this.assign(intoId, expression)
+				this.setValue(intoId, expression)
 				recursionFn(intoId || expression)
 				break
 			case AST.ObjectExpression:
 				args = []
 				if (ast.properties.some(property => property.computed)) {
 					intoId = intoId || this.nextId()
-					this.assign(intoId, "{}")
+					this.setValue(intoId, "{}")
 					ast.properties.forEach(property => {
 						if (property.computed) {
 							left = self.nextId()
@@ -425,7 +441,7 @@ export class ASTCompiler {
 						}
 						right = self.nextId()
 						self.recurse(property.value, right)
-						self.assign(self.member(intoId, left, property.computed), right)
+						self.setValue(self.member(intoId, left, property.computed), right)
 					})
 				} else {
 					ast.properties.forEach(property => {
@@ -442,20 +458,22 @@ export class ASTCompiler {
 						)
 					})
 					expression = "{" + args.join(",") + "}"
-					this.assign(intoId, expression)
+					this.setValue(intoId, expression)
 				}
 				recursionFn(intoId || expression)
 				break
 			case AST.ThisExpression:
-				this.assign(intoId, "s")
-				recursionFn(intoId || "s")
-				break
 			case AST.LocalsExpression:
-				this.assign(intoId, "l")
-				recursionFn(intoId || "l")
+				this.useScope()
+				this.setValue(intoId, "c.go()")
+				if (nameInfo) {
+					nameInfo.context = this.setValue(this.nextId(), "c._parent")
+					nameInfo.value = intoId
+				}
+				recursionFn(intoId || "c.go()")
 				break
 			case AST.NGValueParameter:
-				this.assign(intoId, "v")
+				this.setValue(intoId, "v")
 				recursionFn(intoId || "v")
 				break
 		}
@@ -473,10 +491,51 @@ export class ASTCompiler {
 		return own[key]
 	}
 
-	assign (id, value) {
+	useScope (args = "s,l") {
+		const own = this.current().own
+		if (!own.hasOwnProperty('_scope_')) {
+			this.current().vars.push(`c=ps(${args})`)
+			own['_scope_'] = 'c'
+		}
+	}
+
+	/**
+	 * If a destination variable id is provided, assigns value to that variable id and returns
+	 * the variable id. If no destination variable is provided, ignores the value and returns
+	 * falsy.
+	 * @param {string?} id the runtime identifier that will be assigned to value
+	 * @param {string} value raw string that will be assigned to id
+	 * @returns {string?} which identifier the value was stored to, if any
+	 */
+	setValue (id, value) {
 		if (!id) return
 		this.current().body.push(id, "=", value, ";")
 		return id
+	}
+
+	pushElement (id, value) {
+		if (!id) return
+		this.current().body.push(id, ".push(", value, ");")
+	}
+
+	getValue (ident, ns) {
+		this.useScope()
+		return 'c.gv("' + ident + (ns ? '","' + ns : '') + '")'
+	}
+
+	getScopeOf (ident, ns) {
+		this.useScope()
+		return 'c.gs("' + ident + (ns ? '","' + ns : '') + '")'
+	}
+
+	getOwnValue (scope, ident) {
+		this.useScope()
+		return scope + '.go("' + ident + '")'
+	}
+
+	hasOwnValue (scope, ident) {
+		this.useScope()
+		return scope + '.ho("' + ident + '")'
 	}
 
 	filter (filterName) {
@@ -487,31 +546,60 @@ export class ASTCompiler {
 	}
 
 	ifDefined (id, defaultValue) {
-		return "ifDefined(" + id + "," + this.escape(defaultValue) + ")"
+		return "ifd(" + id + "," + this.escape(defaultValue) + ")"
 	}
 
 	plus (left, right) {
-		return "plus(" + left + "," + right + ")"
+		return "pls(" + left + "," + right + ")"
 	}
 
 	return_ (id) {
 		this.current().body.push("return ", id, ";")
 	}
 
-	if_ (test, consequent, alternate) {
+	// if test === true AT COMPILE TIME, we will execute consequentFn and ignore alternateFn.
+	// Otherwise it devolves into a test performed at runtime, where if test evaluates to truthy
+	// consequentFn will be executed, otherwise (if specified) alternateFn will be executed.
+	if_ (test, consequentFn, alternateFn) {
 		if (test === true) {
-			consequent()
+			consequentFn()
 		} else {
 			const body = this.current().body
 			body.push("if(", test, "){")
-			consequent()
+			consequentFn()
 			body.push("}")
-			if (alternate) {
+			if (alternateFn) {
 				body.push("else{")
-				alternate()
+				alternateFn()
 				body.push("}")
 			}
 		}
+	}
+
+	// "lazy" functions are just conveniences to curry calls to recurse and setValue,
+	// used only in conjunction with _if() (which expects curried functions for its
+	// consequentFn and alternateFn parameters).
+	lazyRecurse (ast, intoId, nameId, recursionFn, create, skipWatchIdCheck) {
+		const self = this
+		return function () {
+			self.recurse(ast, intoId, nameId, recursionFn, create, skipWatchIdCheck)
+		}
+	}
+
+	lazySetValue (id, value) {
+		const self = this;
+		return function () {
+			self.setValue(id, value)
+		}
+	}
+
+	pushForEach (listId, lambdaId, baseId, intoId) {
+		const self = this
+		const body = self.current().body
+		body.push(`${listId}.forEach((e,i)=>{`)
+		body.push(`const flds=${lambdaId}.apply(undefined,[ps(${baseId},e,i,${listId}.length,${listId}.punc)]);`)
+		self.pushElement(intoId, '...flds')
+		body.push('});')
 	}
 
 	not (expression) {
@@ -548,22 +636,8 @@ export class ASTCompiler {
 		return this.nonComputedMember(left, right)
 	}
 
-	getStringValue (item) {
-		this.assign(item, "getStringValue(" + item + ")")
-	}
-
-	lazyRecurse (ast, intoId, nameId, recursionFn, create, skipWatchIdCheck) {
-		const self = this
-		return function () {
-			self.recurse(ast, intoId, nameId, recursionFn, create, skipWatchIdCheck)
-		}
-	}
-
-	lazyAssign (id, value) {
-		const self = this;
-		return function () {
-			self.assign(id, value)
-		}
+	setStringValue (item) {
+		this.setValue(item, "gsv(" + item + ")")
 	}
 
 	stringEscapeFn (c) {
@@ -600,6 +674,11 @@ function append(builder, str) {
 	}
 }
 
+function requireBlock(id) {
+	if (!id)
+		throw new Error('NOT YOUR FAULT, but blocks require a pre-existing array into which content will be pushed')
+}
+
 function * FindLambdas (ast) {
   switch (ast.type) {
 		case AST.Identifier:
@@ -615,14 +694,15 @@ function * FindLambdas (ast) {
     case AST.ContentField:
 			yield * FindLambdas(ast.expression)
 			break
-    case AST.ConditionalBlock:
+    case AST.ConditionalField:
 			yield * FindLambdas(ast.test)
 			yield * FindLambdas(ast.consequent)
 			if (ast.alternate) yield * FindLambdas(ast.alternate)
 			break
-    case AST.ListBlock:
+    case AST.ListField:
 			yield * FindLambdas(ast.expression)
-			for (const elem of ast.body) yield * FindLambdas(elem)
+			yield * FindLambdas(ast.content)
+			yield ast.content // list block (but not other blocks!) treated as a lambda by the compiler
 			break
     case AST.MemberExpression:
 			yield * FindLambdas(ast.object)

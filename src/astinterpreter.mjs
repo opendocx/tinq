@@ -1,25 +1,16 @@
 import { isConstant, isDefined, isLiteral, isString, isNumber, getStringValue, ifDefined, plusFn, assignableAST, isAssignable, getInputs, findConstantExpressions, noop } from "./utils.mjs";
+import { pushScope } from "./scope.mjs"
 import { AST } from "./ast.mjs";
 
 export class ASTInterpreter {
-	constructor (astBuilder, $filter) {
-		this.astBuilder = astBuilder
-		this.$filter = $filter
+	constructor (filters) {
+		this.filters = filters
 	}
 
-	compile (expression) {
+	compile (ast) {
 		const self = this
-		const ast = this.astBuilder.ast(expression)
-		const expressions = []
-		const astProg = ast && ast.type === AST.Program
-		  ? ast
-			: { type: AST.Program, body: (
-				ast
-					? [{ type: AST.ContentField, expression: ast }]
-					: []
-			) }
 		if (ast) {
-			findConstantExpressions(ast, self.$filter)
+			findConstantExpressions(ast, self.filters)
 			// let assignable
 			// let assign
 			// if ((assignable = assignableAST(ast))) {
@@ -37,20 +28,21 @@ export class ASTInterpreter {
 		// 		watch.watchId = key
 		// 	})
 		// }
-		astProg.body.forEach(expression => {
-			expressions.push(self.recurse(expression.expression))
-		})
-		const fn = astProg.body.length === 0
-			? noop
-			: astProg.body.length === 1
-				? expressions[0]
-				: function (scope, locals) {
-					let lastValue;
-					expressions.forEach(exp => {
-						lastValue = exp(scope, locals)
-					})
-					return lastValue
-				}
+		let fn = self.recurse(ast)
+		// if (!ast || (ast.type === AST.Program && !ast.body.length)) { // special case
+		// 	fn = noop
+		// } else if (ast.type === AST.Program) { // it's a template AST, so compile the template
+		// 	const expressions = []
+		// 	ast.body.forEach(elem => {
+		// 		expressions.push(elem.type === AST.TemplateElement ? elem : self.recurse(elem.expression))
+		// 	})
+		// 	fn = function (scope, locals) {
+		// 		let results = expressions.map(exp => exp(scope, locals))
+		// 		return results.join()
+		// 	}
+		// } else { // it's just an expression AST, so compile the expression
+		// 	fn = self.recurse(ast)
+		// }
 		// if (assign) {
 		// 	fn.assign = function (scope, value, locals) {
 		// 		return assign(scope, locals, value)
@@ -68,37 +60,80 @@ export class ASTInterpreter {
 	}
 
 	recurse (ast, context, create) {
+		if (!ast) return noop
 		const self = this
 		let left,
 			right,
 			args,
-			lambda
-		if (ast.winput) {
-			return this.inputs(ast.winput, ast.watchId)
-		}
+			expression
+		// if (ast.winput) {
+		// 	return this.inputs(ast.winput, ast.watchId)
+		// }
 		switch (ast.type) {
+			case AST.Program:
+			case AST.TemplateBlock:
+				args = ast.body.map(elem => self.recurse(elem))
+				return this.templateBlock(args)
+			case AST.TemplateElement:
+				return () => ast.text //this.staticText(ast.text)
+			case AST.ContentField:
+				return this.contentField(this.recurse(ast.expression))
+			case AST.ConditionalField:
+			case AST.ConditionalExpression:
+				expression = this.recurse(ast.test)
+				left = this.recurse(ast.consequent)
+				right = ast.alternate && this.recurse(ast.alternate)
+				return function conditional_ (scope, locals, assign, inputs) {
+					const value = expression(scope, locals, assign, inputs)
+						? left(scope, locals, assign, inputs)
+						: (right ? right(scope, locals, assign, inputs) : '')
+					return context ? { value: value } : value
+				}
+			case AST.ListField:
+				expression = this.recurse(ast.expression, true)
+				right = this.recurse(ast.content) // in essence a lambda
+				return function listfield_ (scope, locals) {
+					const list = expression(scope, locals)
+					if (list.value && list.value.length) {
+						const c = pushScope(list.context)
+						const results = list.value.map(
+							(item, index) => right.apply(undefined, [
+								c.pi(item, index, list.value.length, list.value.punc)
+							])
+						)
+						return results.join('')
+					}
+					return ''
+				}
 			case AST.Literal:
 				return this.value(ast.value, context)
 			case AST.UnaryExpression:
 				right = this.recurse(ast.argument)
 				return this["unary" + ast.operator](right, context)
 			case AST.BinaryExpression:
-				left = this.recurse(ast.left)
-				right = this.recurse(ast.right)
-				return this["binary" + ast.operator](left, right, context)
 			case AST.LogicalExpression:
 				left = this.recurse(ast.left)
 				right = this.recurse(ast.right)
 				return this["binary" + ast.operator](left, right, context)
-			case AST.ConditionalExpression:
-				return this["ternary?:"](
-					this.recurse(ast.test),
-					this.recurse(ast.consequent),
-					this.recurse(ast.alternate),
-					context
-				)
 			case AST.Identifier:
-				return self.identifier(ast.name, context, create)
+				return function identifier_ (scope, locals, assign, inputs) {
+					const c = pushScope(scope, locals)
+					let base, value
+					if (context || (create && create !== 1)) {
+						base = c.gs(ast.name, ast.ns)
+						value = base.go(ast.name)
+					} else {
+						value = c.gv(ast.name, ast.ns)
+					}
+					if (create && create !== 1 && base && base.go(ast.name) == null) {
+						base.sv(ast.name, {}, ast.ns)
+					}
+					if (context) {
+						return { context: base, name: ast.name, value: value }
+					} else {
+						return value
+					}
+				}
 			case AST.MemberExpression:
 				left = this.recurse(ast.object, false, !!create)
 				if (!ast.computed) {
@@ -113,8 +148,12 @@ export class ASTInterpreter {
 				ast.arguments.forEach(expr => {
 					args.push(self.recurse(expr))
 				})
-				right = this.recurse(ast.callee, true) // context==true means we are returned both the value (the function to be called) AND its context (the object ON WHICH that function should be called)
-				return function (scope, locals, assign, inputs) {
+				right = this.recurse(ast.callee, true) // context==true means we are returned both the value (the
+					// ...function to be called) AND its context (the object ON WHICH that function should be called).
+					// Knackly uses this ALL THE TIME, whenever (e.g.) someone calls prototype methods on text strings, numbers, etc.
+					// This is so the function can ultimately be invoked with "this" referring to the right thing
+					// (see `rhs.value.apply(rhs.context, values)` below)
+				return function call_ (scope, locals, assign, inputs) {
 					const rhs = right(scope, locals, assign, inputs)
 					let value
 					if (rhs.value != null) {
@@ -127,35 +166,44 @@ export class ASTInterpreter {
 					return context ? { value: value } : value
 				}
 			case AST.FilterExpression:
-				right = this.$filter(ast.filter.name)
+				right = this.filters(ast.filter.name)
 				args = [] // for regular filters, input is first arg, then any other filter args
-				args.push(self.recurse(ast.input))
+				args.push(self.recurse(ast.input, ast.lambda))
 				ast.arguments.forEach(expr => {
 					args.push(self.recurse(expr))
 				})
-				return function (scope, locals, assign, inputs) {
-					const values = []
+				return function filter_ (scope, locals, assign, inputs) {
+					const argValues = []
 					for (let i = 0; i < args.length; ++i) {
-						values.push(args[i](scope, locals, assign, inputs))
+						const result = args[i](scope, locals, assign, inputs)
+						if (i === 0 && ast.lambda && result.context) {
+							argValues.push(result.value)
+							argValues.push(result.context)
+						} else {
+							argValues.push(result)
+						}
 					}
-					const value = right.apply(undefined, values, inputs) // bug/question (inherited from angular-expressions): does 3rd argument to apply() actually DO anything?  (it's not documented anywhere I have found!)
+					const value = right.apply(undefined, argValues, inputs) // bug/question (inherited from angular-expressions): does 3rd argument to apply() actually DO anything?  (it's not documented anywhere I have found!)
 					return context
-						? { context: undefined, name: undefined, value: value }
+						? { context: ast.lambda ? argValues[1] : pushScope(scope), name: undefined, value: value }
 						: value
 				}
 			case AST.LambdaExpression:
-				lambda = self.recurse(ast.expression)
-				return () => lambda
+				right = self.recurse(ast.expression)
+				return function lambda_ () { return right }
 			case AST.SortKeyExpression:
-				lambda = self.recurse(ast.key)
+				right = self.recurse(ast.key)
 				if (ast.descending) {
-					lambda.descending = true
+					right.descending = true
 				}
-				return () => lambda
+				return function sortkey_ () { return right }
 			case AST.AssignmentExpression:
-				left = this.recurse(ast.left, true, 1)
+				left = this.recurse(ast.left, true, 1) // context==true means we are returned both the value (the
+				// ...value that is being re-assigned) AND its context (the object ON WHICH that value exists)
+				// This is so the value reassignment can happen on the correct object
+				// (see `lhs.context[lhs.name] = rhs` below)
 				right = this.recurse(ast.right)
-				return function (scope, locals, assign, inputs) {
+				return function assign_ (scope, locals, assign, inputs) {
 					const lhs = left(scope, locals, assign, inputs)
 					const rhs = right(scope, locals, assign, inputs)
 					lhs.context[lhs.name] = rhs
@@ -166,7 +214,7 @@ export class ASTInterpreter {
 				ast.elements.forEach(expr => {
 					args.push(self.recurse(expr))
 				})
-				return function (scope, locals, assign, inputs) {
+				return function array_ (scope, locals, assign, inputs) {
 					const value = []
 					for (let i = 0; i < args.length; ++i) {
 						value.push(args[i](scope, locals, assign, inputs))
@@ -190,7 +238,7 @@ export class ASTInterpreter {
 						})
 					}
 				})
-				return function (scope, locals, assign, inputs) {
+				return function object_ (scope, locals, assign, inputs) {
 					const value = {}
 					for (let i = 0; i < args.length; ++i) {
 						if (args[i].computed) {
@@ -202,12 +250,10 @@ export class ASTInterpreter {
 					return context ? { value: value } : value
 				}
 			case AST.ThisExpression:
-				return function (scope) {
-					return context ? { value: scope } : scope
-				}
 			case AST.LocalsExpression:
-				return function (scope, locals) {
-					return context ? { value: locals } : locals
+				return function this_ (scope, locals) {
+					const c = pushScope(scope, locals)
+					return context ? { value: c.go(), context: c._parent } : c.go()
 				}
 			case AST.NGValueParameter:
 				return function (scope, locals, assign) {
@@ -358,12 +404,35 @@ export class ASTInterpreter {
 		}
 	}
 
-	"ternary?:" (test, consequent, alternate, context) {
+	conditional (test, consequent, alternate, context) {
 		return function (scope, locals, assign, inputs) {
 			const arg = test(scope, locals, assign, inputs)
 				? consequent(scope, locals, assign, inputs)
-				: alternate(scope, locals, assign, inputs)
+				: (alternate ? alternate(scope, locals, assign, inputs) : '')
 			return context ? { value: arg } : arg
+		}
+	}
+
+	// staticText (text) {
+	// 	return function () {
+	// 		return text
+	// 	}
+	// }
+
+	contentField (argument) {
+		return function (scope, locals) {
+			let arg = argument(scope, locals)
+			if (typeof arg !== 'string') {
+				arg = arg + ""
+			}
+			return arg
+		}
+	}
+
+	templateBlock(fns) {
+		return function (scope, locals) {
+			let results = fns.map(fn => fn(scope, locals))
+			return results.join('')
 		}
 	}
 
@@ -372,21 +441,6 @@ export class ASTInterpreter {
 			return context
 				? { context: undefined, name: undefined, value: value }
 				: value
-		}
-	}
-
-	identifier (name, context, create) {
-		return function (scope, locals, assign, inputs) {
-			const base = locals && name in locals ? locals : scope
-			if (create && create !== 1 && base && base[name] == null) {
-				base[name] = {}
-			}
-			const value = base ? base[name] : undefined
-			if (context) {
-				return { context: base, name: name, value: value }
-			} else {
-				return value
-			}
 		}
 	}
 
@@ -430,10 +484,10 @@ export class ASTInterpreter {
 		}
 	}
 
-	inputs (input, watchId) {
-		return function (scope, value, locals, inputs) {
-			if (inputs) return inputs[watchId]
-			return input(scope, value, locals)
-		}
-	}
+	// inputs (input, watchId) {
+	// 	return function (scope, value, locals, inputs) {
+	// 		if (inputs) return inputs[watchId]
+	// 		return input(scope, value, locals)
+	// 	}
+	// }
 }

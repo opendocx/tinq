@@ -146,47 +146,68 @@ export function isStateless ($filter, filterName) {
 
 export function findConstantExpressions (ast, $filter) {
 	let allConstants
-	let argsToWatch
+	// let argsToWatch
 	switch (ast.type) {
 		case AST.Program:
+		case AST.TemplateBlock:
 			allConstants = true
-      ast.body.forEach(expr => {
-				findConstantExpressions(expr.expression, $filter)
-				allConstants = allConstants && expr.expression.constant
+      ast.body.forEach(elem => {
+				findConstantExpressions(elem, $filter)
+				allConstants = allConstants && elem.constant
 			})
 			ast.constant = allConstants
 			break
+		case AST.ListField:
+			findConstantExpressions(ast.expression, $filter)
+			findConstantExpressions(ast.content, $filter)
+			ast.constant = ast.expression.constant && ast.content.constant
+			break
+		case AST.ContentField:
+			findConstantExpressions(ast.expression, $filter)
+			ast.constant = ast.expression.constant
+			break
+		case AST.TemplateElement:
 		case AST.Literal:
 			ast.constant = true
-			ast.toWatch = []
+			//ast.toWatch = []
 			break
 		case AST.UnaryExpression:
 			findConstantExpressions(ast.argument, $filter)
 			ast.constant = ast.argument.constant
-			ast.toWatch = ast.argument.toWatch
+			//ast.toWatch = ast.argument.toWatch
 			break
 		case AST.BinaryExpression:
 			findConstantExpressions(ast.left, $filter)
 			findConstantExpressions(ast.right, $filter)
 			ast.constant = ast.left.constant && ast.right.constant
-			ast.toWatch = ast.left.toWatch.concat(ast.right.toWatch)
+			//ast.toWatch = ast.left.toWatch.concat(ast.right.toWatch)
 			break
 		case AST.LogicalExpression:
 			findConstantExpressions(ast.left, $filter)
 			findConstantExpressions(ast.right, $filter)
 			ast.constant = ast.left.constant && ast.right.constant
-			ast.toWatch = ast.constant ? [] : [ast]
+			//ast.toWatch = ast.constant ? [] : [ast]
+			break
+		case AST.ConditionalField:
+			findConstantExpressions(ast.test, $filter)
+			findConstantExpressions(ast.consequent, $filter)
+			ast.constant = ast.test.constant && ast.consequent.constant
+			if (ast.alternate) { // can be null for AST.ConditionalField!
+				findConstantExpressions(ast.alternate, $filter)
+				ast.constant &&= ast.alternate.constant
+			}
+			//ast.toWatch = ast.constant ? [] : [ast]
 			break
 		case AST.ConditionalExpression:
 			findConstantExpressions(ast.test, $filter)
 			findConstantExpressions(ast.consequent, $filter)
 			findConstantExpressions(ast.alternate, $filter)
 			ast.constant = ast.test.constant && ast.consequent.constant && ast.alternate.constant
-			ast.toWatch = ast.constant ? [] : [ast]
+			//ast.toWatch = ast.constant ? [] : [ast]
 			break
 		case AST.Identifier:
 			ast.constant = false
-			ast.toWatch = [ast]
+			//ast.toWatch = [ast]
 			break
 		case AST.MemberExpression:
 			findConstantExpressions(ast.object, $filter)
@@ -194,81 +215,81 @@ export function findConstantExpressions (ast, $filter) {
 				findConstantExpressions(ast.property, $filter)
 			}
 			ast.constant = ast.object.constant && (!ast.computed || ast.property.constant)
-			ast.toWatch = [ast]
+			//ast.toWatch = [ast]
 			break
 		case AST.CallExpression:
 			ast.arguments.forEach(expr => {
 				findConstantExpressions(expr, $filter)
 			})
 			ast.constant = false
-			ast.toWatch = [ast]
+			//ast.toWatch = [ast]
 			break
 		case AST.FilterExpression:
-			argsToWatch = []
+			//argsToWatch = []
 			findConstantExpressions(ast.input, $filter)
-			if (!ast.input.constant) {
-				argsToWatch.push.apply(argsToWatch, ast.input.toWatch)
-			}
+			//if (!ast.input.constant) {
+			//	argsToWatch.push.apply(argsToWatch, ast.input.toWatch)
+			//}
 			allConstants = true
 			ast.arguments.forEach(expr => {
 				findConstantExpressions(expr, $filter)
 				allConstants = allConstants && expr.constant
-				if (!expr.constant) {
-					argsToWatch.push.apply(argsToWatch, expr.toWatch)
-				}
+				//if (!expr.constant) {
+				//	argsToWatch.push.apply(argsToWatch, expr.toWatch)
+				//}
 			})
 			ast.constant = allConstants
-			ast.toWatch = argsToWatch
+			//ast.toWatch = argsToWatch
 			break
 		case AST.LambdaExpression:
 			findConstantExpressions(ast.expression, $filter)
 			ast.constant = ast.expression.constant
-			ast.toWatch = ast.expression.toWatch
+			//ast.toWatch = ast.expression.toWatch
 			break
 		case AST.SortKeyExpression:
 			findConstantExpressions(ast.key, $filter)
 			ast.constant = ast.key.constant
-			ast.toWatch = ast.key.toWatch
+			//ast.toWatch = ast.key.toWatch
 			break
 		case AST.AssignmentExpression:
 			findConstantExpressions(ast.left, $filter)
 			findConstantExpressions(ast.right, $filter)
 			ast.constant = ast.left.constant && ast.right.constant
-			ast.toWatch = [ast]
+			//ast.toWatch = [ast]
 			break
 		case AST.ArrayExpression:
 			allConstants = true
-			argsToWatch = []
+			//argsToWatch = []
       ast.elements.forEach(expr => {
 				findConstantExpressions(expr, $filter)
 				allConstants = allConstants && expr.constant
-				if (!expr.constant) {
-					argsToWatch.push.apply(argsToWatch, expr.toWatch)
-				}
+				//if (!expr.constant) {
+				//	argsToWatch.push.apply(argsToWatch, expr.toWatch)
+				//}
 			})
 			ast.constant = allConstants
-			ast.toWatch = argsToWatch
+			//ast.toWatch = argsToWatch
 			break
 		case AST.ObjectExpression:
 			allConstants = true
-			argsToWatch = []
+			//argsToWatch = []
       ast.properties.forEach(property => {
 				findConstantExpressions(property.value, $filter)
 				allConstants = allConstants && property.value.constant && !property.computed
-				if (!property.value.constant) {
-					argsToWatch.push.apply(argsToWatch, property.value.toWatch)
-				}
+				//if (!property.value.constant) {
+				//	argsToWatch.push.apply(argsToWatch, property.value.toWatch)
+				//}
 			})
 			ast.constant = allConstants
-			ast.toWatch = argsToWatch
+			//ast.toWatch = argsToWatch
 			break
 		case AST.ThisExpression:
 			ast.constant = false
-			ast.toWatch = []
+			//ast.toWatch = []
 			break
 		case AST.LocalsExpression:
 			ast.constant = false
-			ast.toWatch = []
+			//ast.toWatch = []
 			break
 	}
 }
@@ -301,10 +322,7 @@ export function isLiteral (ast) {
 	return ast.type === AST.Program
 		? (
 			ast.body.length === 0 ||
-			(ast.body.length === 1 &&
-				(ast.body[0].expression.type === AST.Literal ||
-					ast.body[0].expression.type === AST.ArrayExpression ||
-					ast.body[0].expression.type === AST.ObjectExpression))
+			(ast.body.length === 1 && ast.body[0].type === AST.TemplateElement)
 		)
 		: (
 			ast.type === AST.Literal ||

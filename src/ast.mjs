@@ -9,8 +9,8 @@ AST.TemplateBlock = 'TemplateBlock' // a sequence of quasis and fields in a temp
 AST.TemplateElement = 'TemplateElement' // a chunk of boilerplate content (no fields) in a template
 AST.ContentField = 'ContentField' // a content field in a template
 AST.NoOp = 'NoOp' // no-op statement in a template
-AST.ConditionalBlock = 'ConditionalBlock' // an if/elseif/else/endif block in a template
-AST.ListBlock = 'ListBlock' // a list/endlist block in a template (properties: expression and content (array))
+AST.ConditionalField = 'ConditionalField' // an if/elseif/else/endif block in a template
+AST.ListField = 'ListField' // a list/endlist block in a template (properties: expression and content (block))
 AST.ThisExpression = 'ThisExpression' // "this" keyword -- in angular-expression, this represents the "scope"
 AST.ArrayExpression = 'ArrayExpression'
 AST.ObjectExpression = 'ObjectExpression'
@@ -206,12 +206,12 @@ function serializeAstNode (ast, subs = false, isElseIf = false) {
 			return (ast.value && ast.value.raw) || ast.value
     case AST.ContentField:
       return '{[' + serializeAstNode(ast.expression, subs) + ']}'
-		case AST.ConditionalBlock: {
+		case AST.ConditionalField: {
 			return (isElseIf ? '{[elseif ' : '{[if ')
 				+ serializeAstNode(ast.test, subs) + ']}'
 			  + serializeAstNode(ast.consequent, subs)
 				+ ast.alternate
-				  ? ast.alternate.type === AST.ConditionalBlock
+				  ? ast.alternate.type === AST.ConditionalField
 					  ? '{[elseif ' + serializeAstNode(ast.alternate.test, subs) + ']}' + serializeAstNode(ast.alternate.consequent)
 						: '{[else]}' + serializeAstNode(ast.alternate, subs) + '{[endif]}'
 					: '{[endif]}'
@@ -300,11 +300,11 @@ function toLegacyAST (ast, subs = false, isElseIf = false) {
         expr: serializeAstNode(ast.expression),
         id: ast.fieldNum,
       })
-		case AST.ConditionalBlock: {
+		case AST.ConditionalField: {
       const contentArray = [].concat(toLegacyAST(ast.consequent))
       let endArray = contentArray
       if (ast.alternate) {
-        if (ast.alternate.type === AST.ConditionalBlock) {
+        if (ast.alternate.type === AST.ConditionalField) {
           contentArray.push(toLegacyAST(ast.alternate, false, true))
         } else {
           contentArray.push(legacyNode({
@@ -327,8 +327,8 @@ function toLegacyAST (ast, subs = false, isElseIf = false) {
         contentArray,
       })
 		}
-    case AST.ListBlock: {
-      const contentArray = ast.body.map(elem => toLegacyAST(elem))
+    case AST.ListField: {
+      const contentArray = [].concat(toLegacyAST(ast.content))
       contentArray.push(legacyNode({
         type: 'EndList',
         id: ast.endFieldNum,

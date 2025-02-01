@@ -2,26 +2,13 @@ import { AST } from "./ast.mjs"
 import { TemplateLexer, ChunkMode } from "./templatelexer.mjs"
 
 export class TemplateParser {
-  constructor (exprParser, options) {
+  constructor (exprParser, options = {}) {
     this.lexer = new TemplateLexer()
-    this.options = options
-    this.ast = new TemplateASTBuilder(this.lexer, exprParser, options)
-  }
-
-  parse (text) {
-    return this.ast.ast(text)
-  }
-
-  compile (text) {
-    return this.astCompiler.compile(text)
-  }
-}
-
-class TemplateASTBuilder {
-  constructor (lexer, exprParser, options) {
-    this.lexer = lexer
     this.exprParser = exprParser
-    this.options = options
+    this.options = { includeLocation: exprParser.options.includeLocation }
+    if (options && ('includeLocation' in options)) {
+      this.options.includeLocation = options.includeLocation
+    }
   }
 
   ast (text) { // top-level asts/programs are reserved for templates
@@ -147,8 +134,8 @@ class TemplateASTBuilder {
         }
       }
       return {
-        type: AST.ConditionalBlock,
-        test: this.exprParser.parse(token.content),
+        type: AST.ConditionalField,
+        test: this.exprParser.ast(token.content),
         consequent: consequent.length === 1 ? consequent[0] : this.templateBlock(consequent),
         alternate: alternate || null,
         fieldNum: token.fieldNum,
@@ -169,13 +156,14 @@ class TemplateASTBuilder {
     let token, endToken
     if ((token = this.expectField('list'))) {
       // consume block content until we reach & consume the endlist
-      const body = this.blockBody()
+      const content = this.templateBlock()
       if ((endToken = this.expectField('endlist'))) {
-        this.appendPuncPlaceholder(body)
+        this.appendPuncPlaceholder(content.body)
+        content.lambda = true
         return {
-          type: AST.ListBlock,
-          expression: this.exprParser.parse(token.content),
-          body,
+          type: AST.ListField,
+          expression: this.exprParser.ast(token.content),
+          content,
           fieldNum: token.fieldNum,
           endFieldNum: endToken.fieldNum,
         }
@@ -214,10 +202,24 @@ class TemplateASTBuilder {
     }
     const result = {
       type: AST.ContentField,
-      expression: this.exprParser.parse(expr),
+      expression: this.exprParser.ast(expr),
     }
-    if (token && token.fieldNum) {
-      result.fieldNum = token.fieldNum
+    if (token) {
+      if (token.soloLine) {
+        // const nextToken = this.peek()
+        // if (nextToken.token === 'Quasi') {
+        // } else {
+        this.tokens.unshift({
+          token: 'Quasi',
+          index: token.index + token.text.length + 4,
+          text: '\n'
+        })
+        // }
+        //result.soloLine = true
+      }
+      if (token.fieldNum) {
+        result.fieldNum = token.fieldNum
+      }
     }
     return result
   }

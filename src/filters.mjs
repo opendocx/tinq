@@ -2,6 +2,7 @@ import { format as dateFnsFormat } from 'date-fns'
 import numeral from 'numeral'
 import numWords from 'number-to-words-en'
 import deepEqual from 'fast-deep-equal'
+import { pushScope, parseListExample } from './scope.mjs'
 import { Yvalue, isIterable } from './yvalue.mjs'
 import { unEscapeQuotes } from './utils.mjs'
 
@@ -194,7 +195,7 @@ function punc (inputList, example = '1, 2, and 3') {
   if (!inputList) return inputList
   // if (inputList instanceof Scope) throw new Error('Unexpected scope as punc input')
   if (!inputList || !Array.isArray(inputList) || !inputList.length) return inputList
-  const parsed = Yvalue.parseListExample(example)
+  const parsed = parseListExample(example)
   if (parsed) {
     // inputList may be the actual source array (the context stack has not yet been pushed!)
     // so make a shallow copy before adding any custom properties onto the array
@@ -218,12 +219,10 @@ function keepsections (input) {
 
 // runtime implementation of list filters:
 
-function sort (input) {
-  if (!input) return input
-  // if (input instanceof Scope) throw new Error('Unexpected scope as sort input')
-  if (!Array.isArray(input) || !input.length || arguments.length < 2) return input
+function sort (array, parentScope) {
+  if (!Array.isArray(array) || !array.length || arguments.length < 2) return array
   const sortBy = []
-  let i = 1
+  let i = 2
   while (i < arguments.length) {
     // TODO: what is argument at this point?
     const sortKeyLambda = arguments[i++]
@@ -243,65 +242,53 @@ function sort (input) {
     if (valA > valB) { return sortBy[depth].descending ? -1 : 1 }
     return compare(a, b, depth + 1)
   }
-  return input.slice().sort(compare)
+  return array.slice().sort(compare)
 }
 sort.listFilter = true
 sort.keyFilter = true
 
-function filter (input, predicate) {
-  if (input && input.length === 0) return input
-  return callArrayFunc(Array.prototype.filter, input, predicate, 'filter')
+function filter (array, parentScope, predicate) {
+  if (!array || !array.length) return array
+  return callArrayFunc(Array.prototype.filter, array, parentScope, predicate, 'filter')
 }
 filter.listFilter = true
 
-function find (input, predicate) {
-  if (input && input.length === 0) return null
-  return callArrayFunc(Array.prototype.find, input, predicate, 'find')
+function find (array, parentScope, predicate) {
+  if (!array || !array.length) return null
+  return callArrayFunc(Array.prototype.find, array, parentScope, predicate, 'find')
 }
 find.listFilter = true
 
-function any (input, predicate) {
-  if (input && input.length === 0) return false
-  return callArrayFunc(Array.prototype.some, input, predicate, 'any')
+function any (array, parentScope, predicate) {
+  if (!array || !array.length) return false
+  return callArrayFunc(Array.prototype.some, array, parentScope, predicate, 'any')
 }
 any.aliases = ['some']
 any.listFilter = true
 any.rtlFilter = true
 
-function every (input, predicate) {
-  if (input && input.length === 0) return true
-  return callArrayFunc(Array.prototype.every, input, predicate, 'every')
+function every (array, parentScope, predicate) {
+  if (!array || !array.length) return true
+  return callArrayFunc(Array.prototype.every, array, parentScope, predicate, 'every')
 }
 every.aliases = ['all']
 every.listFilter = true
 every.rtlFilter = true
 
-function map (input, mapLambda) {
-  return callArrayFunc(Array.prototype.map, input, mapLambda, 'map')
+function map (array, parentScope, mapLambda) {
+  return callArrayFunc(Array.prototype.map, array, parentScope, mapLambda, 'map')
 }
 map.listFilter = true
 
-function group (input, groupLambda) {
-  if (!input) return input
-  // if (input instanceof Scope) throw new Error('Unexpected scope as group input')
-  if (!Array.isArray(input) || arguments.length < 2) {
-    return input
+function group (array, parentScope, groupLambda) {
+  if (!Array.isArray(array) || arguments.length < 2) {
+    return array
   }
-  if (input.length === 0) return []
-  const evaluator = groupLambda
-  // let lScope = Scope.pushList(input, scope.__frame)
-  const grouped = input.reduce(
+  if (array.length === 0) return []
+  const grouped = array.reduce(
     (result, item, index) => {
-      // lScope = Scope.pushListItem(index, lScope)
-      /* const key = lScope.evaluate(evaluator).toString() */
-      const yobj = item && item.__yobj
-      let key = yobj
-        ? yobj.evaluate(evaluator)
-        : evaluator(item, item) // just evaluate item directly
-      const keyobj = key && key.__yobj // check if the key is a proxy
-      if (keyobj) { // if so, get the underlying value
-        key = keyobj.bareValue
-      }
+      /* const key = lScope.evaluate(groupLambda).toString() */
+      let key = groupLambda(parentScope.pi(item, index, array.length))
       key = key && key.valueOf() // ensure wrapped primitives and dates are unwrapped too
       let bucket = result.find(b => b._key === key)
       if (!bucket) {
@@ -309,35 +296,30 @@ function group (input, groupLambda) {
         result.push(bucket)
       }
       bucket._values.push(item)
-      // lScope = Scope.pop(lScope)
       return result
     },
     []
   )
-  // lScope = Scope.pop(lScope)
   return grouped
 }
 group.listFilter = true
 
-function reduce (input, reducerLambda, initValue = undefined) {
-  if (!input) return input
-  // if (input instanceof Scope) throw new Error('Unexpected scope as reduce input')
-  if (!Array.isArray(input) || arguments.length < 2) {
-    return input
+function reduce (array, parentScope, reducerLambda, initValue = undefined) {
+  if (!Array.isArray(array) || arguments.length < 2) {
+    return array
   }
-  if (input.length === 0) return initValue
-  // input should now be an array of scope proxy objects (or other plain objects or primitive values)
-  const reducer = reducerLambda
-  const input0 = input[0]
+  if (array.length === 0) return initValue
+  const input0 = array[0]
   const yobj0 = input0 && input0.__yobj
-  const list = Scope.pushList(input, yobj0 && yobj0.getParentEffective())
-  const reduced = list.items.reduce(
-    (result, itemFrame, index) => {
+  const list = Scope.pushList(array, yobj0 && yobj0.getParentEffective())
+  const reduced = array.items.reduce(
+    (result, item, index) => {
       if (index === 0 && initValue === undefined) {
-        return itemFrame.value
+        return item
       } // else
-      const reducerItemFrame = Scope.pushReducerItem(index, list, result)
-      return reducerItemFrame.evaluate(reducer)
+      const reducerItemFrame = parentScope.pi(item, index, array.length)
+      reducerItemFrame._result = result
+      return reducerLambda(reducerItemFrame)
     },
     initValue
   )
@@ -348,7 +330,7 @@ reduce.listFilter = true
 
 // helper functions
 
-function callArrayFunc (func, array, predicateLambda, funcName) {
+function callArrayFunc (func, array, parentScope, predicateLambda, funcName) {
   if (!array) return array
   // if (array instanceof Scope) throw new Error('Unexpected scope as list filter input')
   if (!Array.isArray(array) || arguments.length < 2) {
@@ -361,26 +343,10 @@ function callArrayFunc (func, array, predicateLambda, funcName) {
     }
     throw new Error(`Invalid argument passed to ${filter} filter: ${predicateLambda}`)
   }
-  const evaluator = predicateLambda
-  // const justThis = evaluator.ast.type === AST.ThisExpression // no scope lookup necessary -- we just want raw value
-  // predicateStr can refer to built-in properties _index, _index0, or _parent.
-  // These need to evaluate to the correct thing.
-  // It can also refer to this, which should refer to the current array element (even if it's a primitive)
-  // let lScope = Scope.pushList(array, scope.__frame)
-  const result = func.call(array, (item, index) => {
-    // item will be a scope proxy
-    const yobj = item && item.__yobj
-    return yobj
-      ? yobj.evaluate(evaluator) // includes correct handling of primitive values, etc.
-      : evaluator(item, item) // just evaluate item directly
-    // lScope = Scope.pushListItem(index, lScope)
-    // const subResult = (justThis && (!lScope._value || (lScope.frameType === Scope.PRIMITIVE)))
-    //   ? item
-    //   : lScope.evaluate(evaluator)
-    // lScope = Scope.pop(lScope)
-    // return subResult
-  })
-  // lScope = Scope.pop(lScope)
+
+  const result = func.call(array, (item, index) => (
+    predicateLambda(parentScope.pi(item, index, array.length))
+  ))
   // const result = func.call(array, (item) => evaluator(item.scopeProxy))
   return result
 }

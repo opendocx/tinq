@@ -1,44 +1,30 @@
-import { Lexer, Parser, Compiler } from '../src/index.mjs'
+import { Tinql } from '../src/index.mjs'
 import chai from 'chai'
 var expect = chai.expect
-var expressions = { Lexer, Parser }
 
 chai.config.includeStack = true;
 
-var testPhases = ['interpreter', 'compiler']
+var testPhases = ['interpreter'] //, 'compiler']
 
 describe("tinql", function() {
-	describe(".Lexer", function() {
+	describe(".parseExpression", function() {
 		it("should be a function", function() {
-			expect(expressions.Lexer).to.be.a("function")
+			expect(Tinql).to.be.a("function") // class actually? can we easily test for that?
 		})
-
-		it("should provide a .lex()-method", function() {
-			var lexer = new expressions.Lexer()
-
-			expect(lexer.lex).to.be.a("function")
-		})
-	})
-
-	describe(".Parser", function() {
-		it("should be a function", function() {
-			expect(expressions.Parser).to.be.a("function")
-		});
 
 		it("should provide a .compile()-method", function() {
-			var parser = new expressions.Parser(undefined, undefined, {})
-
-			expect(parser.compile).to.be.a("function")
+			var tinql = new Tinql()
+			expect(tinql.compileExpression).to.be.a("function")
 		})
 	})
 
 	testPhases.forEach(phase => {
-		const compilerOptions = { interpreter: (phase === 'interpreter') }
+		const options = { interpreter: (phase === 'interpreter') }
 
 		describe(phase, function() {
 			var scope;
 			var evaluate;
-			var compiler = new Compiler(undefined, compilerOptions)
+			var tinql = new Tinql(options)
 	
 			beforeEach(function() {
 				scope = {
@@ -51,93 +37,93 @@ describe("tinql", function() {
 			});
 	
 			it("should return a function", function() {
-				var c = compiler.compile("")
+				var c = tinql.compileExpression("")
 				expect(c).to.be.a("function");
 			});
 	
 			it("should throw an error if the given value is not a string", function() {
 				expect(function() {
-					compiler.compile();
-				}).to.throw("src must be a string, instead saw 'undefined'");
+					tinql.compileExpression();
+				}).to.throw("src must be a string or AST object; instead saw 'undefined'");
 			});
 	
 			it("should expose the ast", function() {
-				expect(compiler.compile("tmp").ast).to.be.a("object");
+				expect(tinql.compileExpression("tmp").ast).to.be.a("object");
 			});
 	
 			describe("when evaluating literals", function() {
 				it("should return null", function() {
-					evaluate = compiler.compile("null");
+					evaluate = tinql.compileExpression("null");
 					expect(evaluate(scope)).to.equal(null);
 				});
 	
 				it("should return true", function() {
-					evaluate = compiler.compile("true");
+					evaluate = tinql.compileExpression("true");
 					expect(evaluate(scope)).to.equal(true);
 				});
 	
 				it("should return false", function() {
-					evaluate = compiler.compile("false");
+					evaluate = tinql.compileExpression("false");
 					expect(evaluate(scope)).to.equal(false);
 				});
 	
 				it("should return 2.34e5", function() {
-					evaluate = compiler.compile("2.34e5");
+					evaluate = tinql.compileExpression("2.34e5");
 					expect(evaluate(scope)).to.equal(2.34e5);
 				});
 	
 				it("should return 'string'", function() {
-					evaluate = compiler.compile("'string'");
+					evaluate = tinql.compileExpression("'string'");
 					expect(evaluate(scope)).to.equal("string");
 				});
 	
 				it("should return [ship, 1, 2, []]", function() {
-					evaluate = compiler.compile("[ship, 1, 2, []]");
+					evaluate = tinql.compileExpression("[ship, 1, 2, []]");
 					expect(evaluate(scope)).to.eql([scope.ship, 1, 2, []]);
 				});
 	
 				it("should return { test: 'value', 'new-object': {} }", function() {
-					evaluate = compiler.compile("{ test: 'value', 'new-object': {} }");
+					evaluate = tinql.compileExpression("{ test: 'value', 'new-object': {} }");
 					expect(evaluate(scope)).to.eql({ test: "value", "new-object": {} });
 				});
 	
 				it("should return context value when nothing in the scope", function() {
-					evaluate = compiler.compile("test");
+					evaluate = tinql.compileExpression("test");
 					expect(evaluate(scope, { test: "hello" })).to.equal("hello");
 				});
 	
 				it("should return context value when something in the scope", function() {
-					evaluate = compiler.compile("test");
+					evaluate = tinql.compileExpression("test");
 					expect(evaluate({ test: "bye" }, { test: "hello" })).to.equal("hello");
 				});
 			});
 	
 			describe("when evaluating simple key look-ups", function() {
 				it("should return the value if its defined on scope", function() {
-					evaluate = compiler.compile("ship");
+					evaluate = tinql.compileExpression("ship");
 					expect(evaluate(scope)).to.equal(scope.ship);
 				});
 	
 				it("should return undefined instead of throwing a ReferenceError if it's not defined on scope", function() {
-					evaluate = compiler.compile("notDefined");
+					evaluate = tinql.compileExpression("notDefined");
 					expect(evaluate(scope)).to.equal(undefined);
 				});
 	
 				it("should return the scope even when the 'this' keyword is used", function() {
-					evaluate = compiler.compile("this");
+					evaluate = tinql.compileExpression("this");
 					expect(evaluate(scope)).to.equal(scope);
 				});
 			});
 	
 			describe("when evaluating simple assignments", function() {
 				it("should set the new value on scope", function() {
-					evaluate = compiler.compile("newValue = 'new'");
+					evaluate = tinql.compileExpression("newValue = 'new'");
 					evaluate(scope);
 					expect(scope.newValue).to.equal("new");
 				});
 	
 				it("should change the value if its defined on scope", function() {
-					evaluate = compiler.compile("ship = 'ship'");
+					evaluate = tinql.compileExpression("ship = 'ship'");
 					evaluate(scope);
 					expect(scope.ship).to.equal("ship");
 				});
@@ -145,25 +131,25 @@ describe("tinql", function() {
 	
 			describe("when evaluating dot-notated loop-ups", function() {
 				it("should return the value if its defined on scope", function() {
-					evaluate = compiler.compile("ship.pirate.name");
+					evaluate = tinql.compileExpression("ship.pirate.name");
 					expect(evaluate(scope)).to.equal("Jenny");
 				});
 	
 				it("should return undefined instead of throwing a ReferenceError if it's not defined on scope", function() {
-					evaluate = compiler.compile("island.pirate.name");
+					evaluate = tinql.compileExpression("island.pirate.name");
 					expect(evaluate(scope)).to.equal(undefined);
 				});
 			});
 	
 			describe("when evaluating dot-notated assignments", function() {
 				it("should set the new value on scope", function() {
-					evaluate = compiler.compile("island.pirate.name = 'Störtebeker'");
+					evaluate = tinql.compileExpression("island.pirate.name = 'Störtebeker'");
 					evaluate(scope);
 					expect(scope.island.pirate.name).to.equal("Störtebeker");
 				});
 	
 				it("should change the value if its defined on scope", function() {
-					evaluate = compiler.compile("ship.pirate.name = 'Störtebeker'");
+					evaluate = tinql.compileExpression("ship.pirate.name = 'Störtebeker'");
 					evaluate(scope);
 					expect(scope.ship.pirate.name).to.equal("Störtebeker");
 				});
@@ -175,12 +161,12 @@ describe("tinql", function() {
 				});
 	
 				it("should return the value if its defined on scope", function() {
-					evaluate = compiler.compile("ships[1].pirate");
+					evaluate = tinql.compileExpression("ships[1].pirate");
 					expect(evaluate(scope)).to.equal("Störtebeker");
 				});
 	
 				it("should return undefined instead of throwing a ReferenceError if it's not defined on scope", function() {
-					evaluate = compiler.compile("ships[2].pirate");
+					evaluate = tinql.compileExpression("ships[2].pirate");
 					expect(evaluate(scope)).to.equal(undefined);
 				});
 			});
@@ -188,7 +174,7 @@ describe("tinql", function() {
 			describe("when evaluating array assignments", function() {
 				it("should change the value if its defined on scope", function() {
 					scope.ships = [{ pirate: "Jenny" }];
-					evaluate = compiler.compile("ships[0].pirate = 'Störtebeker'");
+					evaluate = tinql.compileExpression("ships[0].pirate = 'Störtebeker'");
 					evaluate(scope);
 					expect(scope.ships[0].pirate).to.equal("Störtebeker");
 				});
@@ -201,7 +187,7 @@ describe("tinql", function() {
 							return scope.ship.pirate;
 						};
 	
-						evaluate = compiler.compile("findPirate()");
+						evaluate = tinql.compileExpression("findPirate()");
 						expect(evaluate(scope)).to.equal(scope.ship.pirate);
 					});
 	
@@ -209,7 +195,7 @@ describe("tinql", function() {
 						scope.returnThis = function() {
 							return this;
 						};
-						evaluate = compiler.compile("returnThis()");
+						evaluate = tinql.compileExpression("returnThis()");
 						expect(evaluate(scope)).to.equal(scope);
 					});
 	
@@ -217,7 +203,7 @@ describe("tinql", function() {
 						scope.ship.returnThis = function() {
 							return this;
 						};
-						evaluate = compiler.compile("ship.returnThis()");
+						evaluate = tinql.compileExpression("ship.returnThis()");
 						expect(evaluate(scope)).to.equal(scope.ship);
 					});
 				});
@@ -227,7 +213,7 @@ describe("tinql", function() {
 						scope.findPirate = function() {
 							return Array.prototype.slice.call(arguments);
 						};
-						evaluate = compiler.compile("findPirate(ship.pirate, 1, [2, 3])");
+						evaluate = tinql.compileExpression("findPirate(ship.pirate, 1, [2, 3])");
 						expect(evaluate(scope)).to.eql([scope.ship.pirate, 1, [2, 3]]);
 					});
 				});
@@ -235,52 +221,52 @@ describe("tinql", function() {
 	
 			describe("when evaluating operators", function() {
 				it("should return the expected result when using +", function() {
-					evaluate = compiler.compile("1 + 1");
+					evaluate = tinql.compileExpression("1 + 1");
 					expect(evaluate()).to.equal(2);
 				});
 	
 				it("should return the expected result when using -", function() {
-					evaluate = compiler.compile("1 - 1");
+					evaluate = tinql.compileExpression("1 - 1");
 					expect(evaluate()).to.equal(0);
 				});
 	
 				it("should return the expected result when using *", function() {
-					evaluate = compiler.compile("2 * 2");
+					evaluate = tinql.compileExpression("2 * 2");
 					expect(evaluate()).to.equal(4);
 				});
 	
 				it("should return the expected result when using /", function() {
-					evaluate = compiler.compile("4 / 2");
+					evaluate = tinql.compileExpression("4 / 2");
 					expect(evaluate()).to.equal(2);
 				});
 	
 				it("should return the expected result when using %", function() {
-					evaluate = compiler.compile("3 % 2");
+					evaluate = tinql.compileExpression("3 % 2");
 					expect(evaluate()).to.equal(1);
 				});
 	
 				it("should return the expected result when using &&", function() {
-					evaluate = compiler.compile("true && true");
+					evaluate = tinql.compileExpression("true && true");
 					expect(evaluate()).to.equal(true);
-					evaluate = compiler.compile("true && false");
+					evaluate = tinql.compileExpression("true && false");
 					expect(evaluate()).to.equal(false);
-					evaluate = compiler.compile("false && false");
+					evaluate = tinql.compileExpression("false && false");
 					expect(evaluate()).to.equal(false);
 				});
 	
 				it("should return the expected result when using ||", function() {
-					evaluate = compiler.compile("true || true");
+					evaluate = tinql.compileExpression("true || true");
 					expect(evaluate()).to.equal(true);
-					evaluate = compiler.compile("true || false");
+					evaluate = tinql.compileExpression("true || false");
 					expect(evaluate()).to.equal(true);
-					evaluate = compiler.compile("false || false");
+					evaluate = tinql.compileExpression("false || false");
 					expect(evaluate()).to.equal(false);
 				});
 	
 				it("should return the expected result when using !", function() {
-					evaluate = compiler.compile("!true");
+					evaluate = tinql.compileExpression("!true");
 					expect(evaluate()).to.equal(false);
-					evaluate = compiler.compile("!false");
+					evaluate = tinql.compileExpression("!false");
 					expect(evaluate()).to.equal(true);
 				});
 	
@@ -301,9 +287,9 @@ describe("tinql", function() {
 							});*/
 	
 				it("should return the expected result when using ?", function() {
-					evaluate = compiler.compile("true? 'it works' : false");
+					evaluate = tinql.compileExpression("true? 'it works' : false");
 					expect(evaluate()).to.equal("it works");
-					evaluate = compiler.compile("false? false : 'it works'");
+					evaluate = tinql.compileExpression("false? false : 'it works'");
 					expect(evaluate()).to.equal("it works");
 				});
 			});
@@ -328,7 +314,7 @@ describe("tinql", function() {
 				});
 	
 				it("should still be parseable and executable", function() {
-					evaluate = compiler.compile("ships[index][pi + 'rate'](Jenny)");
+					evaluate = tinql.compileExpression("ships[index][pi + 'rate'](Jenny)");
 					expect(evaluate(scope)).to.equal("Jenny");
 				});
 			});
@@ -336,7 +322,7 @@ describe("tinql", function() {
 			describe("when evaluating syntactical errors", function() {
 				it("should give a readable error message", function() {
 					expect(function() {
-						compiler.compile("'unterminated string");
+						tinql.compileExpression("'unterminated string");
 					}).to.throw(
 						"Lexer Error: Unterminated quote at columns 0-20 ['unterminated string] in expression ['unterminated string]."
 					);
@@ -344,7 +330,7 @@ describe("tinql", function() {
 	
 				it("should give a readable error message", function() {
 					expect(function() {
-						compiler.compile("3 = 4");
+						tinql.compileExpression("3 = 4");
 					}).to.throw(
 						'Trying to assign a value to a non l-value'
 					);
@@ -353,7 +339,7 @@ describe("tinql", function() {
 	
 			describe("when using filters", function() {
 				it("should apply the given filter", function() {
-					evaluate = compiler.compile('1.2345 | format:"000.00"');
+					evaluate = tinql.compileExpression('1.2345 | format:"000.00"');
 					expect(
 						evaluate({})
 					).to.equal("001.23");
@@ -362,25 +348,25 @@ describe("tinql", function() {
 	
 			describe("when using list filters", function() {
 				it("should apply the filter filter", function() {
-					evaluate = compiler.compile('[1,2,3,4] | filter: this > 1');
+					evaluate = tinql.compileExpression('[1,2,3,4] | filter: this > 1');
 					expect(
 						evaluate({})
 					).to.deep.equal([2,3,4]);
 				});
 				it("should apply the sort filter", function() {
-					evaluate = compiler.compile('[3,1,4,1,5,9] | sort: this');
+					evaluate = tinql.compileExpression('[3,1,4,1,5,9] | sort: this');
 					expect(
 						evaluate({})
 					).to.deep.equal([1,1,3,4,5,9]);
 				});
 				it("should apply the descending sort filter", function() {
-					evaluate = compiler.compile('[3,1,4,1,5,9] | sort: -this');
+					evaluate = tinql.compileExpression('[3,1,4,1,5,9] | sort: -this');
 					expect(
 						evaluate({})
 					).to.deep.equal([9,5,4,3,1,1]);
 				});
 				it("should apply the sort filter with multiple mixed keys", function() {
-					evaluate = compiler.compile('[{a:"A",b:2},{a:"A",b:1},{a:"A",b:3},{a:"B",b:3},{a:"B",b:1},{a:"B",b:2}] | sort:-a:b');
+					evaluate = tinql.compileExpression('[{a:"A",b:2},{a:"A",b:1},{a:"A",b:3},{a:"B",b:3},{a:"B",b:1},{a:"B",b:2}] | sort:-a:b');
 					expect(
 						evaluate({})
 					).to.deep.equal([{a:"B",b:1},{a:"B",b:2},{a:"B",b:3},{a:"A",b:1},{a:"A",b:2},{a:"A",b:3}])
@@ -389,7 +375,7 @@ describe("tinql", function() {
 	
 			describe("when evaluating the same expression multiple times", function() {
 				it("should cache the generated function", function() {
-					expect(compiler.compile("a")).to.equal(compiler.compile("a"));
+					expect(tinql.compileExpression("a")).to.equal(tinql.compileExpression("a"));
 				});
 			});
 	
@@ -431,20 +417,20 @@ describe("tinql", function() {
 	
 			describe(".cache", function() {
 				it("should be an object by default", function() {
-					expect(compiler.cache).to.be.an("object");
+					expect(tinql.cache).to.be.an("object");
 				});
 	
 				it("should cache the generated function by the expression", function() {
-					var fn = compiler.compile("a");
+					var fn = tinql.compileExpression("a");
 	
-					expect(compiler.cache.a).to.equal(fn);
+					expect(tinql.cache.a).to.equal(fn);
 				});
 	
 				describe("when setting it to false", function() {
 					it("should disable the cache", function() {
-						compiler.cache = false;
-						expect(compiler.compile("a")).to.not.equal(compiler.compile("a"));
-						compiler.cache = Object.create(null);
+						tinql.cache = false;
+						expect(tinql.compileExpression("a")).to.not.equal(tinql.compileExpression("a"));
+						tinql.cache = Object.create(null);
 					});
 				});
 			});

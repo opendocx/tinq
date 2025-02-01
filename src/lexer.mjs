@@ -19,9 +19,14 @@ const ESCAPE = {
   '"': '"'
 }
 
+const defaultLexerOptions = {
+	//isIdentifierStart: undefined, //isFunction(identStart) && identStart,
+	//isIdentifierContinue: undefined //isFunction(identContinue) && identContinue
+}
+
 export class Lexer {
-  constructor (options) {
-    this.options = options
+  constructor (options = undefined) {
+    this.options = options || defaultLexerOptions
   }
 
   lex (text) {

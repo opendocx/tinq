@@ -2,15 +2,15 @@ import { describe, it } from 'mocha'
 import chai from 'chai'
 import path from 'path'
 import { fileURLToPath } from 'node:url'
-import { Compiler, AST } from '../src/index.mjs'
+import { Tinql, AST } from '../src/index.mjs'
 import { readJSONFile } from './test-utils.mjs'
 
 var assert = chai.assert
 
-const compiler = new Compiler()
-const parser = compiler.templater
+const tinql = new Tinql()
+const templateParser = tinql.templater
 const parseTemplate = (text) => {
-  const result = parser.parse(text)
+  const result = templateParser.ast(text)
   return AST.toLegacyAST(result)
 }
 

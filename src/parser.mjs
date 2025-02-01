@@ -1,46 +1,27 @@
 import { AST } from "./ast.mjs"
-import { ASTInterpreter } from "./astinterpreter.mjs";
-import { ASTCompiler } from "./astcompiler.mjs";
+import { Lexer } from './lexer.mjs'
 import { isAssignable } from "./utils.mjs";
-import filters from "./filters.mjs"
 
-const filterAliases = {}
-for (const name in filters) {
-	const func = filters[name]
-	if (func && func.aliases) {
-		func.aliases.forEach(alias => {
-			filterAliases[alias] = func
-		})
+const defaultParserOptions = {
+	includeLocation: false,
+	literals: {
+		true: true,
+		false: false,
+		null: null,
+		undefined: undefined,
 	}
 }
 
-export class Parser {
-	constructor (lexer, typeDict, options) {
-		this.lexer = lexer
-		this.options = options
-		this.typeDict = typeDict
-		this.$filter = function getFilter (name) {
-			return filters[name] || filterAliases[name]
+export class ExpressionParser {
+  constructor (getFilter, parserOptions = {}) {
+		this.options = { ...defaultParserOptions }
+		if (parserOptions) {
+			for (const prop of Object.keys(parserOptions)) {
+				this.options[prop] = parserOptions[prop]
+			}
 		}
-		this.ast = new ASTBuilder(lexer, options)
-		this.astCompiler = options.interpreter
-			? new ASTInterpreter(this.ast, this.$filter)
-			: new ASTCompiler(this.ast, this.$filter)
-	}
-
-	parse (text) {
-		return this.ast.ast(text)
-	}
-
-	compile (text) {
-		return this.astCompiler.compile(text)
-	}
-}
-
-class ASTBuilder {
-  constructor (lexer, options) {
-    this.lexer = lexer
-    this.options = options
+    this.lexer = new Lexer()
+		this.getFilter = getFilter
     this.selfReferential = {
       this: { type: AST.ThisExpression },
       $locals: { type: AST.LocalsExpression }
@@ -302,13 +283,10 @@ class ASTBuilder {
 
 	filter (baseExpression) {
 		const filterIdent = this.identifier()
-		let filterFunc = filters[filterIdent.name]
-		if (!filterFunc) {
-			filterFunc = filterAliases[filterIdent.name]
-			if (filterFunc) {
-				// filterIdent.origName = filterIdent.name // breaks some tests right now, but might be useful?
-				filterIdent.name = filterFunc.name // aliases get normalized in AST
-			}
+		let filterFunc = this.getFilter(filterIdent.name)
+		if (filterFunc) {
+			// filterIdent.origName = filterIdent.name // breaks some tests right now, but might be useful?
+			filterIdent.name = filterFunc.name // aliases get normalized in AST
 		}
 		const isListFilter = filterFunc && filterFunc.listFilter
 		const isSort = isListFilter && filterFunc.keyFilter
