@@ -10,7 +10,7 @@ import { TV_Family_Data } from './test-data.mjs'
 var assert = chai.assert
 var expect = chai.expect
 
-var testPhases = ['interpreter']//,*/ 'compiler']
+var testPhases = ['interpreter', 'compiler']
 
 describe("tinql.templater", function() {
 
@@ -230,19 +230,19 @@ describe("tinql.templater", function() {
         it('should assemble a dynamically sorted THEN filtered list', function () {
           const template = "{[list Children | sort:-Birth:+Name | filter:Group=='A']}\n*{[Name]}\n{[endlist]}"
           evaluate = tinql.compileTemplate(template)
-          const result = evaluate(data_Children2)
+          const result = evaluate(data_Children)
           assert.strictEqual(result, '*Beth\n*Yolanda\n*Alice\n*John\n')
         })
         it('should assemble a dynamically filtered THEN sorted list', function () {
           const template = "{[list Children | filter:Group=='A' | sort:-Birth:+Name]}\n*{[Name]}\n{[endlist]}"
           evaluate = tinql.compileTemplate(template)
-          const result = evaluate(data_Children2)
+          const result = evaluate(data_Children)
           assert.strictEqual(result, '*Beth\n*Yolanda\n*Alice\n*John\n')
         })
         it('check if an item is in a list using the "any" filter', function () {
           const template = "{[if Children|any:Name == 'Yolanda']}We found Yolanda!{[else]}No luck.{[endif]}"
           evaluate = tinql.compileTemplate(template)
-          const result = evaluate(data_Children2)
+          const result = evaluate(data_Children)
           assert.strictEqual(result, 'We found Yolanda!')
         })
         it('check if any nested lists meet a qualification by chaining the "any" filter (+ nested scope lookups)', function () {
@@ -260,31 +260,31 @@ describe("tinql.templater", function() {
         it('check if all items in a list meet a criteria using the "every" filter', function () {
           const template = "{[if Children|every:Group == 'A' || Group == 'B']}Either A or B{[endif]}"
           evaluate = tinql.compileTemplate(template)
-          const result = evaluate(data_Children2)
+          const result = evaluate(data_Children)
           assert.strictEqual(result, 'Either A or B')
         })
         it('recognize that NOT all items in a list meet a criteria (using "every" filter)', function () {
           const template = "{[if Children|every:Group == 'A']}All A{[else]}Not all A{[endif]}"
           evaluate = tinql.compileTemplate(template)
-          const result = evaluate(data_Children2)
+          const result = evaluate(data_Children)
           assert.strictEqual(result, 'Not all A')
         })
         it('should find a specific item in a list', function () {
           const template = 'First child with a d in their name is {[(Children|find:Name.includes("d")).Name]}'
           evaluate = tinql.compileTemplate(template)
-          const result = evaluate(data_Children2)
+          const result = evaluate(data_Children)
           assert.strictEqual(result, 'First child with a d in their name is Ted')
         })
         it('should use grouping to find unique items in a list (+ list punctuation)', function () {
           const template = 'Children were born in the years {[list Children|group:Birth.getFullYear()|sort:_key|punc:\'1, 2 and 3\']}{[_key]}{[endlist]}.'
           evaluate = tinql.compileTemplate(template)
-          const result = evaluate(data_Children2)
+          const result = evaluate(data_Children)
           assert.strictEqual(result, 'Children were born in the years 1970, 2000 and 2007.')
         })
         it('should use grouping to create nested lists from a flat list', function () {
           const template = 'Children were born in the years {[list Children|group:Birth.getFullYear()|sort:_key|punc:"1; 2; and 3"]}{[_key]} ({[list _values|sort:Name|punc:"1, 2 and 3"]}{[Name]}{[endlist]}){[endlist]}.'
           evaluate = tinql.compileTemplate(template)
-          const result = evaluate(data_Children2)
+          const result = evaluate(data_Children)
           assert.strictEqual(result, 'Children were born in the years 1970 (Alice and John); 2000 (Beth and Yolanda); and 2007 (Eric, Mark and Ted).')
         })
         it('should assemble a document with a primitive list, _index', function () {
@@ -334,39 +334,36 @@ describe("tinql.templater", function() {
           const result = evaluate(data)
           assert.strictEqual(result, 'Asia\nAfrica\nNorth America\nSouth America\nAntarctica\nEurope\nAustralia/Oceania\n')
         })
-        it('should assemble a document with a filtered primitive list and an UNRELATED nested + filtered list, and then vice versa', function () {
-          // const originalObjectPrototype = Object.prototype;
-          // const originalStringPrototype = String.prototype;
-          const template = 'Continents:\n{[list Continents|filter:!this.startsWith("A")]}\n * {[this]} ({[list Oceans|filter:Name.startsWith("A")]}{[_index]}. {[Name]} in {[_parent]}, {[endlist]})\n{[endlist]}'
+        it('in nested but otherwise unrelated lists, _parent in the inner object list refers to the outer primitive list', function () {
+          const template =
+`Continents:
+{[list Continents|filter:!this.startsWith("A")]}
+ * {[this]} ({[list Oceans|filter:Name.startsWith("A")]}{[_index]}. {[Name]} in {[_parent]}, {[endlist]})
+{[endlist]}`
           evaluate = tinql.compileTemplate(template)
-          const data = {
-            Planet: 'Earth',
-            Continents: ['Africa', 'Asia', 'Europe', 'North America', 'South America', 'Antarctica', 'Australia/Oceania'],
-            Oceans: [
-              { Name: 'Pacific', AverageDepth: 3970 },
-              { Name: 'Atlantic', AverageDepth: 3646 },
-              { Name: 'Indian', AverageDepth: 3741 },
-              { Name: 'Southern', AverageDepth: 3270 },
-              { Name: 'Arctic', AverageDepth: 1205 }
-            ]
-          }
-          const result = evaluate(data)
-          assert.strictEqual(result, 'Continents:\n * Europe (1. Atlantic in Europe, 2. Arctic in Europe, )\n * North America (1. Atlantic in North America, 2. Arctic in North America, )\n * South America (1. Atlantic in South America, 2. Arctic in South America, )\n')
-          // ensure data context prototypes have not been messed with!
-          // assert.strictEqual(String.prototype, originalStringPrototype, 'String.prototype has changed') // I doubt this works anyway
-          // assert.strictEqual(data.Continents[0].prototype, String.prototype, 'primitive\'s prototype has beem modified in the data context')
-          // assert.strictEqual(Object.prototype, originalObjectPrototype, 'String.prototype has changed') // I doubt this works anyway
-          // assert.strictEqual(data.Oceans[0].prototype, Object.prototype, 'object\'s prototype has beem modified in the data context')
-
-          const template2 = 'Oceans:\n{[list Oceans|filter:Name.startsWith("A")]}\n * {[Name]} ({[list Continents|filter:!this.startsWith("A")]}{[_index]}. {[this]} in {[_parent.Name]}, {[endlist]})\n{[endlist]}'
-          const evaluate2 = tinql.compileTemplate(template2)
-          const result2 = evaluate2(data)
-          assert.strictEqual(result2, 'Oceans:\n * Atlantic (1. Europe in Atlantic, 2. North America in Atlantic, 3. South America in Atlantic, )\n * Arctic (1. Europe in Arctic, 2. North America in Arctic, 3. South America in Arctic, )\n')
-          // ensure data context prototypes have not been messed with!
-          // assert.strictEqual(String.prototype, originalStringPrototype, 'String.prototype has changed (#2)') // I doubt this works anyway
-          // assert.strictEqual(data.Continents[0].prototype, String.prototype, 'primitive\'s prototype has beem modified in the data context (#2)')
-          // assert.strictEqual(Object.prototype, originalObjectPrototype, 'String.prototype has changed (#2)') // I doubt this works anyway
-          // assert.strictEqual(data.Oceans[0].prototype, Object.prototype, 'object\'s prototype has beem modified in the data context (#2)')
+          const result = evaluate(data_Planet)
+          assert.strictEqual(result,
+`Continents:
+ * Europe (1. Atlantic in Europe, 2. Arctic in Europe, )
+ * North America (1. Atlantic in North America, 2. Arctic in North America, )
+ * South America (1. Atlantic in South America, 2. Arctic in South America, )
+`
+          )
+        })
+        it('in nested but otherwise unrelated lists, _parent in the inner primitive list refers to the outer object list', function () {
+          const template =
+`Oceans:
+{[list Oceans|filter:Name.startsWith("A")]}
+ * {[Name]} ({[list Continents|filter:!this.startsWith("A")]}{[_index]}. {[this]} in {[_parent.Name]}, {[endlist]})
+{[endlist]}`
+          const evaluate = tinql.compileTemplate(template)
+          const result = evaluate(data_Planet)
+          assert.strictEqual(result,
+`Oceans:
+ * Atlantic (1. Europe in Atlantic, 2. North America in Atlantic, 3. South America in Atlantic, )
+ * Arctic (1. Europe in Arctic, 2. North America in Arctic, 3. South America in Arctic, )
+`
+          )
         })
         it('should assemble a (simple) full name template', function () {
           const template = '{[ClientFirstName]} {[ClientMiddleName?ClientMiddleName + " ":""]}{[ClientLastName]}'
@@ -398,18 +395,6 @@ describe("tinql.templater", function() {
 
 const data_Children = {
   Children: [
-    { Name: 'John', Birth: new Date(1970, 8, 5) },
-    { Name: 'Alice', Birth: new Date(1970, 8, 5) },
-    { Name: 'Eric', Birth: new Date(2007, 9, 24) },
-    { Name: 'Ted', Birth: new Date(2007, 9, 24) },
-    { Name: 'Mark', Birth: new Date(2007, 9, 24) },
-    { Name: 'Yolanda', Birth: new Date(2000, 1, 1) },
-    { Name: 'Beth', Birth: new Date(2000, 1, 1) }
-  ]
-}
-
-const data_Children2 = {
-  Children: [
     { Name: 'John', Birth: new Date(1970, 8, 5), Group: 'A' },
     { Name: 'Alice', Birth: new Date(1970, 8, 5), Group: 'A' },
     { Name: 'Eric', Birth: new Date(2007, 9, 24), Group: 'B' },
@@ -417,5 +402,17 @@ const data_Children2 = {
     { Name: 'Mark', Birth: new Date(2007, 9, 24), Group: 'B' },
     { Name: 'Yolanda', Birth: new Date(2000, 1, 1), Group: 'A' },
     { Name: 'Beth', Birth: new Date(2000, 1, 1), Group: 'A' }
+  ]
+}
+
+const data_Planet = {
+  Planet: 'Earth',
+  Continents: ['Africa', 'Asia', 'Europe', 'North America', 'South America', 'Antarctica', 'Australia/Oceania'],
+  Oceans: [
+    { Name: 'Pacific', AverageDepth: 3970 },
+    { Name: 'Atlantic', AverageDepth: 3646 },
+    { Name: 'Indian', AverageDepth: 3741 },
+    { Name: 'Southern', AverageDepth: 3270 },
+    { Name: 'Arctic', AverageDepth: 1205 }
   ]
 }

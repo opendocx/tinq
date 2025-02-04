@@ -376,7 +376,7 @@ export class TObject {
     const yobj = iterable && iterable.__yobj
     if (yobj) { // it's a list proxy (result of evaluating an expression)
       if (yobj.getParent() === parentObj) { // it already has the correct/desired context
-        return yobj // just go with what we've already got
+        return yobj // just getOwnVal with what we've already got
       }
       // else
       console.log('pushList called with out-of-context proxy')

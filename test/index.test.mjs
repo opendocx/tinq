@@ -4,7 +4,7 @@ var expect = chai.expect
 
 chai.config.includeStack = true;
 
-var testPhases = ['interpreter'] //, 'compiler']
+var testPhases = ['interpreter', 'compiler']
 
 describe("tinql", function() {
 	describe(".parseExpression", function() {

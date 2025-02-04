@@ -5,7 +5,7 @@ var assert = chai.assert
 
 chai.config.includeStack = true;
 
-var testPhases = ['interpreter'] //, 'compiler']
+var testPhases = ['interpreter', 'compiler']
 
 describe("YEvaluate Filters", function() {
 

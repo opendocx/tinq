@@ -1,14 +1,17 @@
 const primitiveConstructors = [String, Number, Boolean, Date]
 
 export function pushScope (scope, locals, index0 = undefined, count = undefined, punc = undefined) {
-  const isList = typeof index0 === 'number' && count > 0
 	let result = scope instanceof Scope ? scope : new Scope(scope)
-  if (isList) {
-    result = result.pi(locals, index0, count, punc)
+  if (!isNaN(index0)) { // don't bother checking count or punc because those are not required in all situations
+    result = result.pushIter(locals, +index0, count, punc)
   } else if (locals) {
-    result = result.po(locals)
+    result = result.pushObj(locals)
   }
 	return result
+}
+
+export function isScope (obj) {
+  return obj instanceof Scope
 }
 
 export class Scope {
@@ -44,46 +47,50 @@ export class Scope {
     this._parent = parentScope || null
   }
 
-  po (childValue) { // push object
+  pushObj (childValue) {
+    if (childValue && childValue._parent === this) { // child value is already a context with the correct parent
+      return childValue // this can happen with explicit indexing into an array of objects, to avoid losing the scope chain
+    }
     return new Scope(childValue, this)
   }
 
-  pi (value, index0, count, punc) { // push iteration/element of list
+  pushIter (value, index0, count, punc) { // push iteration/element of list
     return new EnumerationScope(this, value, index0, count, punc)
   }
 
-  gv (ident, ns) { // get value
+  lookupVal (ident, ns) {
     if (ns) {
       // look up scope chain until you find a frame of the expected typename, then look up ident on that frame (or return whole frame's value if no ident given)
-      const frame = this.gs(null, ns)
-      return frame && frame.go(ident)
+      const frame = this.lookupScope(null, ns)
+      return frame && frame.getOwnVal(ident)
     }
     if (ident) {
       // look up scope chain until you find one that "has" a member by the name of ident, and return that ident's value
-      const frame = this.gs(ident)
-      return frame && frame.go(ident)
+      const frame = this.lookupScope(ident)
+      return frame && frame.getOwnVal(ident)
     }
     // else: return the whole value for this frame
     return this.value
   }
 
-  sv (ident, value, ns) { // set value
-    // not implemented
-    throw new error('not implemented')
+  setOwnVal (ident, value, ns) {
+    //throw new error('not implemented')
     this.value[ident] = value
   }
 
-  ho (ident) { // has OWN value
-    if (ident && ident.startsWith('_')) return (ident in this)
+  hasOwnVal (ident) {
+    if (ident && ident.startsWith('_')) {
+      if (ident in this) return true // _parent, _index0 etc. are on this, but _key, _values (for grouping) are on this.value
+    }
     if (this.type === 'null') return false
     if (!ident) return true
     if (typeof this.value === 'object') return (ident in this.value)
     return Boolean(this.value[ident])
   }
 
-  go (ident) { // get OWN value
+  getOwnVal (ident) {
     if (!ident) return this.value
-    if (ident.startsWith('_')) return this[ident]
+    if (ident.startsWith('_') && (ident in this)) return this[ident]
     if (this.type === 'null') return undefined
     let result = this.value[ident]
     if (typeof result === 'function' && result.ast) {
@@ -92,7 +99,7 @@ export class Scope {
     return result
   }
 
-  gs (ident, ns) { // get scope
+  lookupScope (ident, ns) {
     let result = this
     if (ns) { // only look at type name for lookup
       while (result && (result.typename !== ns)) result = result._parent
@@ -100,7 +107,7 @@ export class Scope {
     }
     if (ident) {
       // when ns not specified, just look for presence of ident (fall-back to top of stack if not found)
-      while (result && !result.ho(ident)) result = result._parent
+      while (result && !result.hasOwnVal(ident)) result = result._parent
       return result || this
     }
     // if no ident specified, just return this frame
@@ -108,8 +115,20 @@ export class Scope {
   }
 
   [Symbol.toPrimitive] (hint) {
-    if (this.type === 'null') return this.value
-		return this.value[Symbol.toPrimitive](hint)
+    switch (this.type) {
+      case 'null':
+        return this.value
+      case 'string':
+      case 'number':
+      case 'boolean':
+      case 'date':
+        return this.value.valueOf()
+      default:
+        if (hint === 'string') return ''+this.value
+        if (hint === 'number') return +this.value
+        // else
+        return Boolean(this.value)
+    }
   }
 
 	toString (...args) {
