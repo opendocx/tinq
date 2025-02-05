@@ -2,7 +2,8 @@ import { describe, it } from 'mocha'
 import chai from 'chai'
 import path from 'path'
 import { fileURLToPath } from 'node:url'
-import { Tinql, AST } from '../src/index.mjs'
+import { Tinql } from '../src/index.mjs'
+import { toLegacyAST } from '../src/legacy.mjs'
 import { readJSONFile } from './test-utils.mjs'
 
 var assert = chai.assert
@@ -11,7 +12,7 @@ const tinql = new Tinql()
 const templateParser = tinql.templater
 const parseTemplate = (text) => {
   const result = templateParser.ast(text)
-  return AST.toLegacyAST(result)
+  return toLegacyAST(result)
 }
 
 describe('Field parsing of simple conditionals', function () {

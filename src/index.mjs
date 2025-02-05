@@ -5,6 +5,7 @@ import { AST } from './ast.mjs'
 import { ASTInterpreter } from "./astinterpreter.mjs";
 import { ASTCompiler } from "./astcompiler.mjs";
 import filters from "./filters.mjs"
+import { extractLogic } from "./extractlogic.mjs"
 
 export { ExpressionParser, TemplateParser, AST }
 
@@ -80,16 +81,16 @@ export class Tinql {
 		return ast
 	}
 
-	reduceTemplate (src) {
+	extractTemplateLogic (src) {
 		let ast
 		if (typeof src === 'string') {
-			ast = this.parseExpression(src)
+			ast = this.parseTemplate(src)
 		} else if (src && typeof src === 'object') {
 			ast = src
 		} else {
 			throw new TypeError(`src must be a string or AST object; instead saw '${typeof src}'`)
 		}
-		return this.reduceLogic(ast)
+		return extractLogic(ast)
 	}
 
 	compileExpression (src) {
@@ -142,9 +143,5 @@ export class Tinql {
 		}
 		let func = this.astCompiler.compile(ast)
 		return func
-	}
-
-	reduceLogic (ast) {
-
 	}
 }
