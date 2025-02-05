@@ -91,7 +91,7 @@ describe('Parsing expressions ', function () {
         arguments: [
           {
             type: 'LambdaExpression',
-            expression: { type: 'ThisExpression', loc: { start: { column: 43 }, end: { column: 47 } } }, // in yatte this was a LocalsExpression instead??
+            expression: { type: 'ThisExpression', loc: { start: { column: 43 }, end: { column: 47 } } }, // in yatte this was a LocalsExpression instead
           },
         ],
       })

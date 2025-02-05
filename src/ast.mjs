@@ -23,7 +23,6 @@ AST.ConditionalExpression = 'ConditionalExpression'
 AST.CallExpression = 'CallExpression'
 AST.AssignmentExpression = 'AssignmentExpression'
 // also includes some custom/proprietary node types:
-AST.LocalsExpression = 'LocalsExpression' // "$locals" keyword -- like 'ThisExpression', but for angular-expressions' local scope
 AST.FilterExpression = 'FilterExpression' // properties: input (node), filter (ident), arguments (node array)
 AST.LambdaExpression = 'LambdaExpression' // list filter argument -- properties: expression (node)
 AST.SortKeyExpression = 'SortKeyExpression' // sort filter argument -- properties: key (node), descending (bool)
@@ -61,7 +60,6 @@ const EXPRESSIONS_PRECEDENCE = {
   // Definitions
   [AST.ArrayExpression]: 21,
   [AST.ThisExpression]: 21,
-  [AST.LocalsExpression]: 21,
   [AST.Identifier]: 21,
   // Operations
   [AST.MemberExpression]: 20,
@@ -94,7 +92,6 @@ const EXPRESSIONS_PRECEDENCE = {
 //     case AST.Literal:
 //     case AST.Identifier:
 //     case AST.ThisExpression:
-//     case AST.LocalsExpression:
 //       return nodeModified
 //     case AST.MemberExpression:
 //       return nodeModified | astMutateInPlace(node.object, mutator) | astMutateInPlace(node.property, mutator)
@@ -277,8 +274,6 @@ function serializeAstNode (ast, subs = false, isElseIf = false) {
       )
     case AST.ThisExpression:
       return 'this'
-    case AST.LocalsExpression:
-      return /* subs ? '' : */ '$locals'
 		case AST.AssignmentExpression:
 			return serializeAstNode(ast.left) + '=' + serializeAstNode(ast.right)
     default:

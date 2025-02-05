@@ -24,7 +24,7 @@ export class ExpressionParser {
 		this.getFilter = getFilter
     this.selfReferential = {
       this: { type: AST.ThisExpression },
-      $locals: { type: AST.LocalsExpression }
+      $locals: { type: AST.ThisExpression } // continue parsing $locals for backcompat with Yatte, but it's same as this
     }
   }
 

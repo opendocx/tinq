@@ -1,13 +1,7 @@
 const primitiveConstructors = [String, Number, Boolean, Date]
 
-export function pushScope (scope, locals, index0 = undefined, count = undefined, punc = undefined) {
-	let result = scope instanceof Scope ? scope : new Scope(scope)
-  if (!isNaN(index0)) { // don't bother checking count or punc because those are not required in all situations
-    result = result.pushIter(locals, +index0, count, punc)
-  } else if (locals) {
-    result = result.pushObj(locals)
-  }
-	return result
+export function pushScope (scope) {
+	return scope instanceof Scope ? scope : new Scope(scope)
 }
 
 export function isScope (obj) {
@@ -47,15 +41,24 @@ export class Scope {
     this._parent = parentScope || null
   }
 
-  pushObj (childValue) {
-    if (childValue && childValue._parent === this) { // child value is already a context with the correct parent
-      return childValue // this can happen with explicit indexing into an array of objects, to avoid losing the scope chain
+  ps (value, index0, count, punc) {
+    if (isNaN(index0)) { // no index provided; intent is to push an object scope
+      if (value instanceof Scope) {
+        if (value._parent === this) {
+          return value // looks okay, it's a no-op
+        }
+        throw new Error('Cannot reuse conflicting Scope. What are you trying to do?')
+      }
+      return new Scope(value, this)
+    } else { // index provided; intent is to push an iteration scope
+      if (value instanceof Scope) {
+        if (value._parent === this && value._index0 == index0) {
+          return value // looks okay I guess, let it go
+        }
+        throw new Error('Cannot reuse conflicting EnumerationScope. What are you tryig to do?')
+      }
+      return new EnumerationScope(this, value, index0, count, punc)
     }
-    return new Scope(childValue, this)
-  }
-
-  pushIter (value, index0, count, punc) { // push iteration/element of list
-    return new EnumerationScope(this, value, index0, count, punc)
   }
 
   lookupVal (ident, ns) {

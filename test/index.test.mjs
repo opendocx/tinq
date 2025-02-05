@@ -1,4 +1,5 @@
 import { Tinql } from '../src/index.mjs'
+import { pushScope as ps } from '../src/scope.mjs'
 import chai from 'chai'
 var expect = chai.expect
 
@@ -89,12 +90,12 @@ describe("tinql", function() {
 	
 				it("should return context value when nothing in the scope", function() {
 					evaluate = tinql.compileExpression("test");
-					expect(evaluate(scope, { test: "hello" })).to.equal("hello");
+					expect(evaluate(ps(scope).ps({ test: "hello" }))).to.equal("hello");
 				});
 	
 				it("should return context value when something in the scope", function() {
 					evaluate = tinql.compileExpression("test");
-					expect(evaluate({ test: "bye" }, { test: "hello" })).to.equal("hello");
+					expect(evaluate(ps({ test: "bye" }).ps({ test: "hello" }))).to.equal("hello");
 				});
 			});
 	

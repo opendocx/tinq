@@ -288,7 +288,7 @@ function group (array, parentScope, groupLambda) {
   const grouped = array.reduce(
     (result, item, index) => {
       /* const key = lScope.evaluate(groupLambda).toString() */
-      let key = groupLambda(parentScope.pushIter(item, index, array.length))
+      let key = groupLambda(parentScope.ps(item, index, array.length))
       key = key && key.valueOf() // ensure wrapped primitives and dates are unwrapped too
       let bucket = result.find(b => b._key === key)
       if (!bucket) {
@@ -317,7 +317,7 @@ function reduce (array, parentScope, reducerLambda, initValue = undefined) {
       if (index === 0 && initValue === undefined) {
         return item
       } // else
-      const reducerItemFrame = parentScope.pushIter(item, index, array.length)
+      const reducerItemFrame = parentScope.ps(item, index, array.length)
       reducerItemFrame._result = result
       return reducerLambda(reducerItemFrame)
     },
@@ -345,7 +345,7 @@ function callArrayFunc (func, array, parentScope, predicateLambda, funcName) {
   }
 
   const result = func.call(array, (item, index) => (
-    predicateLambda(parentScope.pushIter(item, index, array.length))
+    predicateLambda(parentScope.ps(item, index, array.length))
   ))
   // const result = func.call(array, (item) => evaluator(item.scopeProxy))
   return result

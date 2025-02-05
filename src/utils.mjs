@@ -287,10 +287,6 @@ export function findConstantExpressions (ast, $filter) {
 			ast.constant = false
 			//ast.toWatch = []
 			break
-		case AST.LocalsExpression:
-			ast.constant = false
-			//ast.toWatch = []
-			break
 	}
 }
 

@@ -50,7 +50,7 @@ export class ASTCompiler {
 			// 	const result = this.nextId()
 			// 	this.recurse(assignable, result)
 			// 	this.return_(result)
-			// 	extra = "fn.assign=" + this.generateFunction("assign", "s,v,l")
+			// 	extra = "fn.assign=" + this.generateFunction("assign", "s,v")
 			// }
 			// const toWatch = getInputs(ast.body)
 			// self.stage = "inputs"
@@ -79,7 +79,7 @@ export class ASTCompiler {
 		const fns = []
 		append(fns, `"${this.USE} ${this.STRICT}"`)
 		append(fns, this.filterPrefix())
-		append(fns, `var fn=${this.generateFunction("fn", "s,l,a,i")}`)
+		append(fns, `var fn=${this.generateFunction("fn", "s,a,i")}`)
 		append(fns, extra)
 		append(fns, this.watchFns())
 		append(fns, 'return fn')
@@ -221,13 +221,13 @@ export class ASTCompiler {
 				expression = self.nextId() // the list value itself
 				obj = {} // to receive the list value's context info
 				self.recurse(ast.expression, expression, obj) // get list value
-				right = self.assignId(self.nextId(), self.generateFunction(ast.content._lkey, "s,l")) // list content lambda
+				right = self.assignId(self.nextId(), self.generateFunction(ast.content._lkey, "s")) // list content lambda
 				left = self.nextId(false, "") // var to hold result of list
 				self.if_(
 					expression + '&&' + expression + '.length',
 					() => {
 						self.assignId(left, `${expression}.map(` +
-							`(e,i)=>${right}.call(undefined,ps(${obj.context},e,i,${expression}.length,${expression}.punc))` +
+							`(e,i)=>${right}.call(undefined,ps(${obj.context}).ps(e,i,${expression}.length,${expression}.punc))` +
 						').join("")')
 					}
 				)
@@ -350,7 +350,7 @@ export class ASTCompiler {
 											self.if_(
 												self.isArray(left) + "&&" + self.isNumber(right), // numeric index into array
 												// avoid losing scope chain
-												self.lazyAssignId(intoId, `ps(${[obj.context, intoId, right, left+'.length', left+'.punc'].join(',')})`)
+												self.lazyAssignId(intoId, `ps(${obj.context}).ps(${[intoId, right, left+'.length', left+'.punc'].join(',')})`)
 											)
 										}
 									}
@@ -360,7 +360,7 @@ export class ASTCompiler {
 					} else { // !ast.computed
 						if (!obj.context) throw "what to do?"
 						const propName = ast.property.name
-						const base = obj.name === '_parent' ? left : obj.context+'.pushObj(' + left + ')'
+						const base = obj.name === '_parent' ? left : obj.context+'.ps(' + left + ')'
 						expression = self.assignId(self.nextId(), base)
 						//const member = self.nonComputedMember(left, propName) // `${left}.${propName}` (plus some other checks)
 						if (create && create !== 1) {
@@ -440,7 +440,7 @@ export class ASTCompiler {
 				ast.arguments.forEach(expr => {
 					const argId = self.nextId()
 					if (expr.type === AST.LambdaExpression || expr.type === AST.SortKeyExpression) {
-						self.assignId(argId, self.generateFunction(expr._lkey, "s,l"))
+						self.assignId(argId, self.generateFunction(expr._lkey, "s"))
 						if (expr.type === AST.SortKeyExpression && expr.descending) {
 							self.assignId(argId + '.descending', 'true') // sets a "descending" property on the sort key lambda function
 						}
@@ -523,7 +523,6 @@ export class ASTCompiler {
 				returnFn(intoId || expression)
 				break
 			case AST.ThisExpression:
-			case AST.LocalsExpression:
 				this.useScope()
 				this.assignId(intoId, "c.getOwnVal()")
 				if (contextOut) {
@@ -550,10 +549,10 @@ export class ASTCompiler {
 		return own[key]
 	}
 
-	useScope (args = "s,l") {
+	useScope () {
 		const own = this.current().own
 		if (!own.hasOwnProperty('_scope_')) {
-			this.current().vars.push(`c=ps(${args})`)
+			this.current().vars.push('c=ps(s)')
 			own['_scope_'] = 'c'
 		}
 	}
@@ -765,7 +764,6 @@ function * FindLambdas (ast) {
 		case AST.Identifier:
 		case AST.Literal:
 		case AST.ThisExpression:
-		case AST.LocalsExpression:
 		case AST.NoOp:
 			break
     case AST.Program:
