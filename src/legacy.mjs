@@ -11,11 +11,11 @@ export const OD = {
   EndList: 'EndList'
 }
 
-export function toLegacyAST (ast, subs = false, isElseIf = false) {
+export function toContentArray (ast, subs = false, isElseIf = false) {
   switch (ast.type) {
     case AST.Program:
     case AST.TemplateBlock:
-      return ast.body.map(elem => toLegacyAST(elem))
+      return ast.body.map(elem => toContentArray(elem))
     case AST.TemplateElement:
       return ast.text
     case AST.ContentField:
@@ -25,16 +25,16 @@ export function toLegacyAST (ast, subs = false, isElseIf = false) {
         id: ast.fieldNum,
       })
     case AST.ConditionalField: {
-      const contentArray = [].concat(toLegacyAST(ast.consequent))
+      const contentArray = [].concat(toContentArray(ast.consequent))
       let endArray = contentArray
       if (ast.alternate) {
         if (ast.alternate.type === AST.ConditionalField) {
-          contentArray.push(toLegacyAST(ast.alternate, false, true))
+          contentArray.push(toContentArray(ast.alternate, false, true))
         } else {
           contentArray.push(legacyNode({
             type: OD.Else,
             id: ast.altFieldNum,
-            contentArray: (endArray = [].concat(toLegacyAST(ast.alternate))),
+            contentArray: (endArray = [].concat(toContentArray(ast.alternate))),
           }))
         }
       }
@@ -52,7 +52,7 @@ export function toLegacyAST (ast, subs = false, isElseIf = false) {
       })
     }
     case AST.ListField: {
-      const contentArray = [].concat(toLegacyAST(ast.content))
+      const contentArray = [].concat(toContentArray(ast.content))
       contentArray.push(legacyNode({
         type: OD.EndList,
         id: ast.endFieldNum,

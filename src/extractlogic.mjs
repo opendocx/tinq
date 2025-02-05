@@ -1,4 +1,4 @@
-import { OD, toLegacyAST } from './legacy.mjs'
+import { OD, toContentArray } from './legacy.mjs'
 
 // this code is carried over from Yatte. Its original purpose was to do some low-hanging optimizations of parsed
 // templates, for example removing redundant content fields to make the logical structure of the template more
@@ -8,7 +8,7 @@ import { OD, toLegacyAST } from './legacy.mjs'
 export function extractLogic (ast) {
   // returns a 'logic tree' for this template --
   // a filtered, optimized AST representing the logical structure of the template
-  const legacyBody = toLegacyAST(ast)
+  const legacyBody = toContentArray(ast)
   return buildLogicTree(legacyBody)
 }
 
