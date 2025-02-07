@@ -1,7 +1,7 @@
 {
-  "name": "tinql",
-  "version": "0.2.0",
-  "description": "Text INtegrated Query Language",
+  "name": "tinq",
+  "version": "0.3.0",
+  "description": "Text INtegrated Query",
   "main": "./src/index.mjs",
   "scripts": {
     "test": "mocha test/*.test.mjs -R spec",
