@@ -1,5 +1,29 @@
 import { AST } from "./ast.mjs";
 
+export const primitiveConstructors = [String, Number, Boolean, Date]
+
+export function indices (length) {
+  return new Array(length).fill(undefined).map((value, index) => index)
+}
+
+export function isPrimitive (value, includeWrapped = true) {
+  switch (typeof value) {
+    case 'string':
+    case 'number':
+    case 'boolean':
+      return true
+    case 'object':
+      if (includeWrapped) {
+        if (value && value.constructor && primitiveConstructors.includes(value.constructor)) {
+          return true
+        }
+      } else if (value && (value instanceof Date)) {
+        return true
+      }
+  }
+  return false
+}
+
 /**
  * Creates a new object without a prototype. This object is useful for lookup without having to
  * guard against prototypically inherited properties via hasOwnProperty.
@@ -68,7 +92,7 @@ export function isString(value) {
  * @param {*} value Reference to check.
  * @returns {boolean} True if `value` is a `Number`.
  */
-export function isNumber(value) {
+export function isNumber (value) {
 	return typeof value === "number"
 }
 
@@ -78,8 +102,35 @@ export function isNumber(value) {
  * @param {*} value Reference to check.
  * @returns {boolean} True if `value` is a `Date`.
  */
-export function isDate(value) {
+export function isDate (value) {
 	return toString.call(value) === "[object Date]"
+}
+
+export function isTruthy (value) {
+	let bValue
+	if (value && isIterable(value)) {
+		// checking if a list is empty or not
+		if (!YObject.isArray(value)) {
+			value = Array.from(value)
+		}
+		bValue = (value.length > 0) // for purposes of evaluation in yatte, we consider empty lists falsy!
+		// (unlike typical JavaScript, where any non-null array, even empty ones, are considered truthy)
+	} else {
+		bValue = Boolean(value)
+	}
+	return bValue
+}
+
+export function isArray (obj) {
+	return Array.isArray(obj)
+}
+
+export function isIterable (obj) {
+	// checks for null and undefined; also strings (though iterable) should not be iterable *contexts*
+	if (obj == null || isPrimitive(obj)) {
+		return false
+	}
+	return typeof obj[Symbol.iterator] === 'function'
 }
 
 /**
@@ -88,7 +139,7 @@ export function isDate(value) {
  * @param {*} value Reference to check.
  * @returns {boolean} True if `value` is a `Function`.
  */
-export function isFunction(value) {
+export function isFunction (value) {
 	return typeof value === "function"
 }
 
@@ -101,6 +152,12 @@ export function isFunction(value) {
  */
 function isRegExp(value) {
 	return toString.call(value) === "[object RegExp]";
+}
+
+export function dateFormat(value) {
+	const offset = value.getTimezoneOffset()
+	value = new Date(value.getTime() - (offset*60*1000))
+	return value.toISOString().slice(0,10)
 }
 
 export function lowercase (string) {

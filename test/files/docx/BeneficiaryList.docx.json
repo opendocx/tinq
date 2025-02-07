@@ -1,0 +1,44 @@
+[
+  {
+    "type": "List",
+    "expr": "Beneficiaries|filter:_index==1",
+    "id": "1",
+    "atom": "L1",
+    "contentArray": [
+      {
+        "type": "Content",
+        "expr": "Name",
+        "id": "2",
+        "atom": "C2"
+      }
+    ]
+  },
+  {
+    "type": "List",
+    "expr": "Beneficiaries|filter:_index>1&&_index<Beneficiaries.length",
+    "id": "4",
+    "atom": "L4",
+    "contentArray": [
+      {
+        "type": "Content",
+        "expr": "Name",
+        "id": "5",
+        "atom": "C2"
+      }
+    ]
+  },
+  {
+    "type": "If",
+    "expr": "Beneficiaries.length>1",
+    "id": "7",
+    "atom": "C7",
+    "contentArray": [
+      {
+        "type": "Content",
+        "expr": "Beneficiaries[Beneficiaries.length-1].Name",
+        "id": "8",
+        "atom": "C8"
+      }
+    ]
+  }
+]

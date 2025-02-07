@@ -1,4 +1,4 @@
-const primitiveConstructors = [String, Number, Boolean, Date]
+import { primitiveConstructors } from './utils.mjs'
 
 export function pushScope (scope) {
 	return scope instanceof Scope ? scope : new Scope(scope)
@@ -57,7 +57,7 @@ export class Scope {
         }
         throw new Error('Cannot reuse conflicting EnumerationScope. What are you tryig to do?')
       }
-      return new EnumerationScope(this, value, index0, count, punc)
+      return new EnumerationScope(this, value, +index0, count, punc)
     }
   }
 
@@ -204,4 +204,43 @@ export function parseListExample (example) {
       return { between, last2: between, only2: between, suffix }
     }
   }
+}
+
+// An instance of ExternalBinary represents an external file or BLOB that
+// (1) TINQ does not know how to create (hence "External"... TINQ only does text)
+// (2) CAN be created dynamically by some other, (again) external, code
+// (3) needs data from inside TINQ's scope to produce this external file
+// (4) (optionally) needs to composite this external output with other output ALSO being created by TINQ
+export class ExternalBinary {
+  constructor (props, scope, contentType = '') {
+    for (const [key, value] of Object.entries(props)) {
+      this[key] = value
+    }
+    if (scope || !('scope' in this)) {
+      this.scope = scope
+    }
+    // contentType is inherited from props (if it's there) or it can be explicitly specified
+    // contentType should be 'text', 'markdown', or 'docx' (for indirects using opendocx)
+    if (contentType || !('contentType' in this)) {
+      this.contentType = contentType
+    }
+  }
+
+  isEqualTo (that) {
+    // compare based on enumeration of that's properties instead of this,
+    // because we want to match if that has no "id" property even if this does!
+    return Object
+      .keys(that)
+      .every(propName => {
+        const indPropVal = that[propName]
+        return (indPropVal && (indPropVal instanceof Scope))
+          ? indPropVal.valueEqualTo(this[propName])
+          : indPropVal === this[propName]
+      })
+  }
+
+  // toString () {} // When an ExternalBinary is encountered during (synchronous) text-based assembly,
+  //                // toString() is called on the instance in order to retrieve a text representation. (maybe)
+  //                // In (async) docx-based assembly, encountering an indirect causes a special
+  //                // placeholder to be inserted so the resulting files can be composed later.
 }

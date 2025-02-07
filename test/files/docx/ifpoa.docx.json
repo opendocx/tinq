@@ -1,0 +1,92 @@
+[
+  {
+    "type": "Content",
+    "expr": "ClientName",
+    "id": "1",
+    "atom": "C1",
+    "idd": [
+      "2"
+    ]
+  },
+  {
+    "type": "If",
+    "expr": "DPOAType==\"Contingent\"",
+    "id": "3",
+    "atom": "C3",
+    "contentArray": [
+      {
+        "type": "ElseIf",
+        "expr": "DPOAType==\"Hybrid\"",
+        "id": "4",
+        "atom": "C4",
+        "contentArray": []
+      }
+    ]
+  },
+  {
+    "type": "If",
+    "expr": "DPOAType==\"Hybrid\"",
+    "id": "6",
+    "atom": "C4",
+    "contentArray": []
+  },
+  {
+    "type": "If",
+    "expr": "DPOAType==\"Contingent\"",
+    "id": "8",
+    "atom": "C3",
+    "contentArray": [
+      {
+        "type": "ElseIf",
+        "expr": "DPOAType==\"Hybrid\"",
+        "id": "9",
+        "atom": "C4",
+        "contentArray": []
+      }
+    ]
+  },
+  {
+    "type": "If",
+    "expr": "DPOAType==\"Contingent\"",
+    "id": "11",
+    "atom": "C3",
+    "contentArray": [
+      {
+        "type": "ElseIf",
+        "expr": "DPOAType==\"Hybrid\"",
+        "id": "12",
+        "atom": "C4",
+        "contentArray": []
+      }
+    ]
+  },
+  {
+    "type": "If",
+    "expr": "DPOAType==\"Hybrid\"",
+    "id": "14",
+    "atom": "C4",
+    "contentArray": []
+  },
+  {
+    "type": "If",
+    "expr": "DPOAType==\"Contingent\"",
+    "id": "16",
+    "atom": "C3",
+    "contentArray": []
+  },
+  {
+    "type": "If",
+    "expr": "DPOAType==\"Contingent\"",
+    "id": "18",
+    "atom": "C3",
+    "contentArray": [
+      {
+        "type": "ElseIf",
+        "expr": "DPOAType==\"Hybrid\"",
+        "id": "19",
+        "atom": "C4",
+        "contentArray": []
+      }
+    ]
+  }
+]

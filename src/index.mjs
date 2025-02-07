@@ -6,6 +6,8 @@ import { ASTInterpreter } from "./astinterpreter.mjs";
 import { ASTCompiler } from "./astcompiler.mjs";
 import filters from "./filters.mjs"
 import { extractLogic } from "./extractlogic.mjs"
+import { DataExtractor } from './dataextractor.mjs'
+import { LogicTreeImporter } from './legacy.mjs'
 
 export { ExpressionParser, TemplateParser, AST }
 
@@ -91,6 +93,15 @@ export class Tinql {
 			throw new TypeError(`src must be a string or AST object; instead saw '${typeof src}'`)
 		}
 		return extractLogic(ast)
+	}
+
+	extractData (logicTree, scope) {
+		const importer = new LogicTreeImporter(this)
+		const ast = importer.arrayToBlock(logicTree, AST.Program)
+		// now we can try to use it to extract the necessary data from a data context:
+		const extractor = new DataExtractor()
+		const result = extractor.assembleData(ast, scope)
+		return result
 	}
 
 	compileExpression (src) {

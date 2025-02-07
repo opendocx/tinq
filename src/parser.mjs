@@ -286,7 +286,7 @@ export class ExpressionParser {
 		let filterFunc = this.getFilter(filterIdent.name)
 		if (filterFunc) {
 			// filterIdent.origName = filterIdent.name // breaks some tests right now, but might be useful?
-			filterIdent.name = filterFunc.name // aliases get normalized in AST
+			filterIdent.name = filterFunc.ident || filterFunc.name // aliases get normalized in AST
 		}
 		const isListFilter = filterFunc && filterFunc.listFilter
 		const isSort = isListFilter && filterFunc.keyFilter

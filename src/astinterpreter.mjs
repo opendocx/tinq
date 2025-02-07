@@ -188,37 +188,41 @@ export class ASTInterpreter {
 					right = this.recurse(ast.property)
 					return function member_computed (scope, assign, inputs) {
 						const lhs = left(scope, assign, inputs)
-						let rhs, value
-						if (lhs) {
-							rhs = right(scope, assign, inputs)
-							rhs = getStringValue(rhs)
-							if (contextOut) {
-								contextOut.context = obj.context
-								contextOut.name = rhs
-								contextOut.computed = true
+						let value
+						let rhs = right(scope, assign, inputs)
+						rhs = getStringValue(rhs)
+						if (contextOut) {
+							contextOut.context = obj.context
+							contextOut.name = rhs
+							contextOut.computed = true
+						}
+						if (isScope(lhs)) {
+							value = lhs.getOwnVal(rhs)
+							if (create && create !== 1) {
+								if (!value) {
+									lhs.setOwnVal(rhs, {})
+									value = lhs.getOwnVal(rhs)
+								}
 							}
-							if (isScope(lhs)) {
-								value = lhs.getOwnVal(rhs)
-								if (create && create !== 1) {
-									if (!value) {
-										lhs.setOwnVal(rhs, {})
-										value = lhs.getOwnVal(rhs)
-									}
-								}
-								if (contextOut) {
-									contextOut.object = value
-								}
-							} else { // should be primitive or array
+							if (contextOut) {
+								contextOut.object = value
+							}
+						} else { // should be primitive or array
+							if (lhs) {
 								value = lhs[rhs]
 								if (create && create !== 1) {
 									if (!value) {
 										value = lhs.value[rhs] = {}
 									}
 								}
-								if (contextOut) {
-									contextOut.object = lhs
-									if (Array.isArray(lhs) && !isNaN(rhs)) { // numeric index into array
-										value = pushScope(obj.context).ps(value, rhs, lhs.length, lhs.punc) // avoid losing scope chain
+							}
+							if (contextOut) {
+								contextOut.object = isScope(lhs) ? lhs.getOwnVal() : lhs
+								if (!isNaN(rhs)) { // numeric index into array; // avoid losing scope chain!
+									if (Array.isArray(lhs)) {
+										value = pushScope(obj.context).ps(value, rhs, lhs.length, lhs.punc)
+									} else {
+										value = pushScope(obj.context).ps(value, rhs, 0)
 									}
 								}
 							}
@@ -228,7 +232,7 @@ export class ASTInterpreter {
 				} else { // !ast.computed
 					const propName = ast.property.name
 					return function member_named (scope, assign, inputs) {
-						const lhs = left(scope, assign, inputs)
+						const lhs = left(scope, assign, inputs) // alert: lhs can be a Scope IF left is a computed member expression!
 						if (!obj.context) throw "what to do?" // maybe base = pushScope(lhs)??
 						// handle special case for _parent identifier, whose value is already a scope!
 						const base = obj.name === '_parent' ? lhs : obj.context.ps(lhs)
@@ -239,7 +243,7 @@ export class ASTInterpreter {
 						}
 						const value = base.getOwnVal(propName)
 						if (contextOut) {
-							contextOut.object = lhs //?  this should not be a context, so do we need to call getOwnVal()??
+							contextOut.object = isScope(lhs) ? lhs.getOwnVal() : lhs // contextOut.object should not be a Scope
 							contextOut.context = base
 							contextOut.computed = false
 							contextOut.name = propName

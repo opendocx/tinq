@@ -78,3 +78,95 @@ function legacyNode (obj) {
   if (obj.contentArray) result.contentArray = obj.contentArray
   return result
 }
+
+export class LogicTreeImporter {
+  constructor (tinql) {
+    this.tinql = tinql
+  }
+
+  arrayToBlock (nodeArray, type) {
+    if (nodeArray.length === 1 && type === AST.TemplateBlock) {
+      // block is unnecessary when length === 1
+      return this.nodeToAst(nodeArray[0])
+    }
+    const body = nodeArray.map(node => this.nodeToAst(node))
+    return {
+      type,
+      body,
+    }
+  }
+  
+  nodeToAst (node) {
+    switch (node.type) {
+      case OD.Content:
+        return this.contentField(node)
+      case OD.If:
+        return this.conditionalBlock(node)
+      case OD.List:
+        return this.listBlock(node)
+    }
+  }
+  
+  contentField (node) {
+    const result = {
+      type: AST.ContentField,
+      expression: this.tinql.parseExpression(node.expr),
+    }
+    if (node.id) {
+      result.fieldNum = node.id
+    }
+    if (node.key || node.atom || node.fieldName) {
+      result.key = node.key || node.atom || node.fieldName
+    }
+    return result
+  }
+
+  conditionalBlock (node) {
+    const lastChild = node.contentArray.length > 0 && node.contentArray[node.contentArray.length - 1]
+    let consequent, alternate, endFieldNum
+    if (lastChild && (lastChild.type === OD.Else || lastChild.type === OD.ElseIf)) {
+      consequent = this.arrayToBlock(node.contentArray.slice(0,-1), AST.TemplateBlock)
+      alternate = lastChild.type === OD.ElseIf
+        ? this.conditionalBlock(lastChild)
+        : this.arrayToBlock(lastChild.contentArray, AST.TemplateBlock)
+    } else {
+      consequent = this.arrayToBlock(node.contentArray, AST.TemplateBlock)
+      alternate = null
+    }
+    const result = {
+      type: AST.ConditionalField,
+      test: this.tinql.parseExpression(node.expr),
+      consequent,
+      alternate,
+    }
+    if (node.id) {
+      result.fieldNum = node.id
+      // result.endFieldNum = ?
+    }
+    if (alternate && lastChild.id) {
+      result.altFieldNum = lastChild.id
+    }
+    if (node.key || node.atom || node.fieldName) {
+      result.key = node.key || node.atom || node.fieldName
+    }
+    return result
+  }
+
+  listBlock (node) {
+    const content = this.arrayToBlock(node.contentArray, AST.TemplateBlock)
+    const result = {
+      type: AST.ListField,
+      expression: this.tinql.parseExpression(node.expr),
+      content,
+    }
+    if (node.id) {
+      result.fieldNum = node.id
+      //result.endFieldNum = ?
+    }
+    if (node.key || node.atom || node.fieldName) {
+      result.key = node.key || node.atom || node.fieldName
+    }
+    return result
+  }
+
+}

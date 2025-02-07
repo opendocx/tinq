@@ -173,6 +173,7 @@ function else_filter (input, unansweredFmt) {
   }
   return input
 }
+else_filter.ident = 'else' // canonical name for normalization
 
 function contains (input, value) {
   if (input === null || typeof input === 'undefined' || input === '') return false
@@ -264,6 +265,7 @@ function any (array, parentScope, predicate) {
   return callArrayFunc(Array.prototype.some, array, parentScope, predicate, 'any')
 }
 any.aliases = ['some']
+any.ident = 'any' // canonical name for normalization
 any.listFilter = true
 any.rtlFilter = true
 
@@ -272,6 +274,7 @@ function every (array, parentScope, predicate) {
   return callArrayFunc(Array.prototype.every, array, parentScope, predicate, 'every')
 }
 every.aliases = ['all']
+every.ident = 'every' // canonical name for normalization
 every.listFilter = true
 every.rtlFilter = true
 

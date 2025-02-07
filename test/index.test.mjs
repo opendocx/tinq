@@ -316,8 +316,13 @@ describe("tinql", function() {
 	
 				it("should still be parseable and executable", function() {
 					evaluate = tinql.compileExpression("ships[index][pi + 'rate'](Jenny)");
-					expect(evaluate(scope)).to.equal("Jenny");
-				});
+					expect(evaluate(scope)).to.equal("Jenny")
+				})
+
+				it("should handle deeply nested contexts", function () {
+					evaluate = tinql.compileExpression("bogus[0].NotExist.Bogus2")
+					expect(evaluate(scope)).to.equal(undefined)
+				})
 			});
 	
 			describe("when evaluating syntactical errors", function() {
