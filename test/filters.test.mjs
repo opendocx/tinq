@@ -1,4 +1,4 @@
-import { Tinql } from '../src/index.mjs'
+import { Tinq } from '../src/index.mjs'
 import chai from 'chai'
 var expect = chai.expect
 var assert = chai.assert
@@ -15,7 +15,7 @@ describe("YEvaluate Filters", function() {
     describe(phase, function() {
       var scope
       var evaluate
-      var tinql = new Tinql(options)
+      var tinql = new Tinq(options)
 
       describe("value filters", function() {
         it("should apply the given filter", function() {

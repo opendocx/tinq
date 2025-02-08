@@ -39,7 +39,7 @@ export function GetFilter (name) {
 	return filters[name] || filterAliases[name]
 }
 
-export class Tinql {
+export class Tinq {
 	constructor (options = {}, typeDefs = [untypedDefault]) {
 		this.options = { ...defaultOptions }
 		for (const prop of Object.keys(options)) {

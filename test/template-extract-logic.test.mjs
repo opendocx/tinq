@@ -1,8 +1,8 @@
 import { describe, it } from 'mocha'
-import { Tinql, AST } from '../src/index.mjs'
+import { Tinq, AST } from '../src/index.mjs'
 import assert from 'assert'
 
-const tinql = new Tinql()
+const tinql = new Tinq()
 
 /*
 {[if x]}

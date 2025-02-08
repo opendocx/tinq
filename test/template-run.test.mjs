@@ -2,7 +2,7 @@ import { describe, it } from 'mocha'
 import chai from 'chai'
 import path from 'path'
 import { fileURLToPath } from 'node:url'
-import { Tinql, AST } from '../src/index.mjs'
+import { Tinq, AST } from '../src/index.mjs'
 import { pushScope } from '../src/scope.mjs'
 import { readJSONFile } from './test-utils.mjs'
 import { TV_Family_Data } from './test-data.mjs'
@@ -20,7 +20,7 @@ describe("tinql.templater", function() {
     describe(phase, function() {
       var scope;
       var evaluate;
-      var tinql = new Tinql(options)
+      var tinql = new Tinq(options)
   
       beforeEach(function() {
         scope = {

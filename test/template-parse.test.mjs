@@ -1,11 +1,11 @@
 import { describe, it } from 'mocha'
 import chai from 'chai'
-import { Tinql } from '../src/index.mjs'
+import { Tinq } from '../src/index.mjs'
 import { toContentArray } from '../src/legacy.mjs'
 
 var assert = chai.assert
 
-const tinql = new Tinql()
+const tinql = new Tinq()
 const templateParser = tinql.templater
 const parseTemplateLegacy = (text) => {
   // warning: this is a convenience function for these (old/legacy) unit tests, but it would be a bad idea

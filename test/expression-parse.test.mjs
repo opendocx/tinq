@@ -1,4 +1,4 @@
-import { Tinql, AST } from '../src/index.mjs'
+import { Tinq, AST } from '../src/index.mjs'
 import { TV_Family_Data } from './test-data.mjs'
 import chai from 'chai'
 var expect = chai.expect
@@ -8,7 +8,7 @@ chai.config.includeStack = true;
 
 describe('Parsing expressions ', function () {
 
-  const tinql = new Tinql({includeLocation: true})
+  const tinql = new Tinq({includeLocation: true})
 
   describe('via exported API', function () {
     // it('should reuse a compiled expression rather than re-compiling it', function () {

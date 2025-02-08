@@ -1,4 +1,4 @@
-import { Tinql } from '../src/index.mjs'
+import { Tinq } from '../src/index.mjs'
 import { pushScope as ps } from '../src/scope.mjs'
 import chai from 'chai'
 var expect = chai.expect
@@ -10,11 +10,11 @@ var testPhases = ['interpreter', 'compiler']
 describe("tinql", function() {
 	describe(".parseExpression", function() {
 		it("should be a function", function() {
-			expect(Tinql).to.be.a("function") // class actually? can we easily test for that?
+			expect(Tinq).to.be.a("function") // class actually? can we easily test for that?
 		})
 
 		it("should provide a .compile()-method", function() {
-			var tinql = new Tinql()
+			var tinql = new Tinq()
 			expect(tinql.compileExpression).to.be.a("function")
 		})
 	})
@@ -25,7 +25,7 @@ describe("tinql", function() {
 		describe(phase, function() {
 			var scope;
 			var evaluate;
-			var tinql = new Tinql(options)
+			var tinql = new Tinq(options)
 	
 			beforeEach(function() {
 				scope = {
@@ -322,6 +322,12 @@ describe("tinql", function() {
 				it("should handle deeply nested contexts", function () {
 					evaluate = tinql.compileExpression("bogus[0].NotExist.Bogus2")
 					expect(evaluate(scope)).to.equal(undefined)
+				})
+
+				it("should not contain redundant chunks of compiled code", function () {
+					evaluate = tinql.compileExpression("a.b.c + a.b.d")
+					const str = evaluate.toString()
+					debugger
 				})
 			});
 	

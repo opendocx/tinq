@@ -1,14 +1,14 @@
 import path from 'path'
 import { fileURLToPath } from 'node:url'
 import chai from 'chai'
-import { Tinql } from '../src/index.mjs'
+import { Tinq } from '../src/index.mjs'
 import { readJSONFile } from './test-utils.mjs'
 import { pushScope } from '../src/scope.mjs'
 import fs from 'fs'
 var assert = chai.assert
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const tinq = new Tinql()
+const tinq = new Tinq()
 
 chai.config.includeStack = true;
 
