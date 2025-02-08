@@ -8,8 +8,9 @@ import filters from "./filters.mjs"
 import { extractLogic } from "./extractlogic.mjs"
 import { DataExtractor } from './dataextractor.mjs'
 import { LogicTreeImporter } from './legacy.mjs'
+import { Scope, EnumerationScope, ExternalBinary } from './scope.mjs'
 
-export { ExpressionParser, TemplateParser, AST }
+export { ExpressionParser, TemplateParser, AST, Scope, EnumerationScope, ExternalBinary }
 
 const defaultOptions = {
 	interpreter: false, // true uses interpreter instead of compiler

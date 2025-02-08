@@ -3,6 +3,11 @@
   "version": "0.3.0",
   "description": "Text INtegrated Query",
   "main": "./src/index.mjs",
+  "type": "module",
+  "exports": {
+    "import": "./src/index.mjs",
+    "require": "./index.cjs"
+  },
   "scripts": {
     "test": "mocha test/*.test.mjs -R spec",
     "test2": "nyc --reporter=lcov --reporter=text-summary mocha"
@@ -24,6 +29,7 @@
     "eslint": "^8.2.0",
     "mocha": "^11.0.1",
     "nyc": "^15.1.0",
+    "rollup": "^4.34.6",
     "standard": "^16.0.4"
   }
 }
