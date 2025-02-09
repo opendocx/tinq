@@ -1,6 +1,6 @@
 import { AST } from "./ast.mjs";
 
-export const primitiveConstructors = [String, Number, Boolean, Date]
+export const primitiveConstructors = [String, Number, Boolean, Date, Function]
 
 export function indices (length) {
   return new Array(length).fill(undefined).map((value, index) => index)

@@ -1,5 +1,5 @@
 import { isConstant, isDefined, isLiteral, isString, isNumber, getStringValue, ifDefined, plusFn, assignableAST, isAssignable, getInputs, findConstantExpressions, noop } from "./utils.mjs";
-import { pushScope, isScope } from "./scope.mjs"
+import { useScope, isScope } from "./scope.mjs"
 import { AST } from "./ast.mjs";
 
 export class ASTInterpreter {
@@ -162,7 +162,7 @@ export class ASTInterpreter {
 			case AST.Identifier:
 				if (self.stage === 'inputs') throw "error: this has been broken for inputs"
 				return function identifier_ (scope, assign, inputs) {
-					const c = pushScope(scope)
+					const c = useScope(scope)
 					let base, value
 					if (contextOut || (create && create !== 1)) {
 						base = c.lookupScope(ast.name, ast.ns)
@@ -220,9 +220,9 @@ export class ASTInterpreter {
 								contextOut.object = isScope(lhs) ? lhs.getOwnVal() : lhs
 								if (!isNaN(rhs)) { // numeric index into array; // avoid losing scope chain!
 									if (Array.isArray(lhs)) {
-										value = pushScope(obj.context).ps(value, rhs, lhs.length, lhs.punc)
+										value = useScope(obj.context).ps(value, rhs, lhs.length, lhs.punc)
 									} else {
-										value = pushScope(obj.context).ps(value, rhs, 0)
+										value = useScope(obj.context).ps(value, rhs, 0)
 									}
 								}
 							}
@@ -289,12 +289,12 @@ export class ASTInterpreter {
 						const result = arg(scope, assign, inputs)
 						argValues.push(result)
 						if (i === 0 && obj) { // list filter functions get the parent context as the 2nd argument!
-							argValues.push(obj.context || pushScope(null)) // must have a context, even if null
+							argValues.push(obj.context || useScope(null)) // must have a context, even if null
 						}
 					})
 					const value = right.apply(undefined, argValues, inputs) // bug/question (inherited from angular-expressions): does 3rd argument to apply() actually DO anything?  (it's not documented anywhere I have found!)
 					if (contextOut) {
-						contextOut.context = pushScope(scope)
+						contextOut.context = useScope(scope)
 					}
 					return value
 				}
@@ -358,7 +358,7 @@ export class ASTInterpreter {
 				}
 			case AST.ThisExpression:
 				return function this_expr (scope) {
-					const c = pushScope(scope)
+					const c = useScope(scope)
 					if (contextOut) {
 						contextOut.context = c._parent
 					}

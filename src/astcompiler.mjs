@@ -1,5 +1,5 @@
 import { isConstant, isDefined, isLiteral, isString, isNumber, getStringValue, ifDefined, plusFn, assignableAST, isAssignable, getInputs, findConstantExpressions, noop } from "./utils.mjs"
-import { pushScope, isScope } from "./scope.mjs"
+import { useScope, isScope } from "./scope.mjs"
 import { AST } from "./ast.mjs";
 
 export class ASTCompiler {
@@ -92,7 +92,7 @@ export class ASTCompiler {
 			"ps",
 			"iss",
 			fns.join('\n') // last argument to Function() is function body; each prior is an argument name
-		)(this.filters, getStringValue, ifDefined, plusFn, pushScope, isScope)
+		)(this.filters, getStringValue, ifDefined, plusFn, useScope, isScope)
 
 		this.state = this.stage = undefined
 		fn.ast = ast

@@ -3,7 +3,7 @@ import chai from 'chai'
 import path from 'path'
 import { fileURLToPath } from 'node:url'
 import { Tinq, AST } from '../src/index.mjs'
-import { pushScope } from '../src/scope.mjs'
+import { useScope } from '../src/scope.mjs'
 import { readJSONFile } from './test-utils.mjs'
 import { TV_Family_Data } from './test-data.mjs'
 
@@ -379,7 +379,7 @@ describe("tinql.templater", function() {
         it('should assemble a simple template with local and global scopes', function () {
           const template = '{[First]} {[Middle ? Middle + " " : ""]}{[Last]}'
           evaluate = tinql.compileTemplate(template)
-          const scope = pushScope({ Last: 'Smith' }).ps({ First: 'John' }) // Last is "global", First is "local"
+          const scope = useScope({ Last: 'Smith' }).ps({ First: 'John' }) // Last is "global", First is "local"
           const result = evaluate(scope)
           assert.strictEqual(result, 'John Smith')
         })

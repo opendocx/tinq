@@ -1,5 +1,5 @@
 import { Tinq } from '../src/index.mjs'
-import { pushScope as ps } from '../src/scope.mjs'
+import { useScope as ps } from '../src/scope.mjs'
 import chai from 'chai'
 var expect = chai.expect
 
@@ -324,10 +324,12 @@ describe("tinql", function() {
 					expect(evaluate(scope)).to.equal(undefined)
 				})
 
-				it("should not contain redundant chunks of compiled code", function () {
-					evaluate = tinql.compileExpression("a.b.c + a.b.d")
-					const str = evaluate.toString()
-					debugger
+				!options.interpreter && it("should not contain redundant chunks of compiled code", function () {
+					//evaluate = tinql.compileExpression("a.b.c + a.b.d")
+					//const str = evaluate.toString()
+					// const funcs = ['a.b.c','a[b].c','a["b"].c'].map(s => s + ':\n' + tinql.compileExpression(s).toString())
+					// console.log(funcs.join('\n\n'))
+					// debugger
 				})
 			});
 	

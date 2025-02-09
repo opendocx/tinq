@@ -2,9 +2,8 @@ import { format as dateFnsFormat } from 'date-fns'
 import numeral from 'numeral'
 import numWords from 'number-to-words-en'
 import deepEqual from 'fast-deep-equal'
-import { pushScope, parseListExample } from './scope.mjs'
-import { Yvalue, isIterable } from './yvalue.mjs'
-import { unEscapeQuotes } from './utils.mjs'
+import { useScope, parseListExample } from './scope.mjs'
+import { unEscapeQuotes, isIterable } from './utils.mjs'
 
 // define built-in filters
 export default {

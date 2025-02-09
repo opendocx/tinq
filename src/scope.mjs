@@ -1,6 +1,6 @@
 import { primitiveConstructors } from './utils.mjs'
 
-export function pushScope (scope) {
+export function useScope (scope) {
 	return scope instanceof Scope ? scope : new Scope(scope)
 }
 
@@ -62,23 +62,25 @@ export class Scope {
   }
 
   lookupVal (ident, ns) {
-    if (ns) {
-      // look up scope chain until you find a frame of the expected typename, then look up ident on that frame (or return whole frame's value if no ident given)
-      const frame = this.lookupScope(null, ns)
-      return frame && frame.getOwnVal(ident)
-    }
-    if (ident) {
-      // look up scope chain until you find one that "has" a member by the name of ident, and return that ident's value
-      const frame = this.lookupScope(ident)
-      return frame && frame.getOwnVal(ident)
-    }
-    // else: return the whole value for this frame
-    return this.value
+    const scope = ns
+      ? this.lookupScope(null, ns) // look up scope chain until you find a frame of the expected typename
+      : this.lookupScope(ident) // look up scope chain until you find one that "has" a member by the name of ident
+    return scope && scope.getOwnVal(ident) // then return ident's value on that frame
   }
 
-  setOwnVal (ident, value, ns) {
-    //throw new error('not implemented')
-    this.value[ident] = value
+  lookupScope (ident, ns) {
+    let scope = this
+    if (ns) { // use only type name to find correct scope
+      while (scope && (scope.typename !== ns)) scope = scope._parent
+      return scope // will be undefined if a frame of type ns is not found in chain! (== bug in caller's code)
+    }
+    // when ns not specified, just look for presence of ident (fall-back to top of stack if not found)
+    while (scope && !scope.hasOwnVal(ident)) scope = scope._parent
+    return scope || this
+  }
+
+  getOwnScope (ident) {
+    
   }
 
   hasOwnVal (ident) {
@@ -102,19 +104,8 @@ export class Scope {
     return result
   }
 
-  lookupScope (ident, ns) {
-    let result = this
-    if (ns) { // only look at type name for lookup
-      while (result && (result.typename !== ns)) result = result._parent
-      return result
-    }
-    if (ident) {
-      // when ns not specified, just look for presence of ident (fall-back to top of stack if not found)
-      while (result && !result.hasOwnVal(ident)) result = result._parent
-      return result || this
-    }
-    // if no ident specified, just return this frame
-    return result
+  setOwnVal (ident, value, ns) {
+    this.value[ident] = value
   }
 
   [Symbol.toPrimitive] (hint) {
