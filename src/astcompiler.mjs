@@ -1,5 +1,5 @@
-import { isConstant, isDefined, isLiteral, isString, isNumber, getStringValue, ifDefined, plusFn, assignableAST, isAssignable, getInputs, findConstantExpressions, noop } from "./utils.mjs"
-import { useScope, isScope } from "./scope.mjs"
+import { isConstant, isDefined, isLiteral, isString, isNumber, ifDefined, plusFn, assignableAST, isAssignable, getInputs, findConstantExpressions, noop } from "./utils.mjs"
+import { useScope } from "./scope.mjs"
 import { AST } from "./ast.mjs";
 
 export class ASTCompiler {
@@ -19,7 +19,7 @@ export class ASTCompiler {
 			assign: { vars: [], body: [], own: {} },
 			inputs: []
 		}
-		let extra = ""
+		let extra = ''
 		if (ast) {
 			findConstantExpressions(ast, self.filters)
 			this.stage = "lambdas"
@@ -38,9 +38,7 @@ export class ASTCompiler {
 					init = '[]'
 				}
 				const lid = self.nextId(false, init)
-				const cinfo = {}
-				self.recurse(rnode, lid, cinfo)
-				lnode._ckey = cinfo.context
+				self.recurse(rnode, lid)
 				self.return_(lid)
 			}
 			// let assignable
@@ -85,14 +83,12 @@ export class ASTCompiler {
 		append(fns, 'return fn')
 		// eslint-disable-next-line no-new-func
 		const fn = new Function(
-			"flt",
-			"gsv",
-			"ifd",
-			"pls",
-			"ps",
-			"iss",
+			'flt',
+			'ifd',
+			'pls',
+			'use',
 			fns.join('\n') // last argument to Function() is function body; each prior is an argument name
-		)(this.filters, getStringValue, ifDefined, plusFn, useScope, isScope)
+		)(this.filters, ifDefined, plusFn, useScope)
 
 		this.state = this.stage = undefined
 		fn.ast = ast
@@ -108,12 +104,12 @@ export class ASTCompiler {
 		const fns = this.state.inputs // currently always empty because inputs stage & watch finding is commented out
 		const self = this
 		fns.forEach(name => {
-			result.push(`var ${name}=${self.generateFunction(name, "s")}`)
+			result.push(`var ${name}=${self.generateFunction(name, 's')}`)
 		})
 		if (fns.length) {
-			result.push(`fn.inputs=[${fns.join(",")}];`)
+			result.push(`fn.inputs=[${fns.join(',')}];`)
 		}
-		return result.join("")
+		return result.join('')
 	}
 
 	generateFunction (name, params) {
@@ -124,20 +120,20 @@ export class ASTCompiler {
 		const parts = []
 		const self = this
 		for (const [filter, id] of Object.entries(this.state.filters)) {
-			parts.push(id + "=flt(" + self.escape(filter) + ")")
+			parts.push(id + '=flt(' + self.escape(filter) + ')')
 		}
-		if (parts.length) return `var ${parts.join(",")};`
-		return ""
+		if (parts.length) return `var ${parts.join(',')};`
+		return ''
 	}
 
 	varsPrefix (section) {
 		return this.state[section].vars.length
-			? `var ${this.state[section].vars.join(",")};`
-			: ""
+			? `var ${this.state[section].vars.join(',')};`
+			: ''
 	}
 
 	funcBody (section) {
-		return this.state[section].body.join("")
+		return this.state[section].body.join('')
 	}
 
 	/**
@@ -146,8 +142,7 @@ export class ASTCompiler {
 	 * @param {object} ast node
 	 * @param {string} intoId id of the variable (in the target code) in which the result of the current operation should
 	 *                        be stored
-	 * @param {object?} contextOut if the current operation needs to return contextual (scope) information, contextOut is
-	 *                             an object through which that contextual information can flow back up the call stack.
+	 * @param {object?} wantScope if the current operation needs to return a Scope object rather than a regular value
 	 * @param {*} returnFn for all expressions and sub-expressions that ultimately compile down to strings (containing
 	 *                        JavaScript), this callback (if specified) is invoked as the last thing after that
 	 *                        compilation is complete. Not currently called for template & field nodes.
@@ -156,17 +151,17 @@ export class ASTCompiler {
 	 * @returns void. The recurse method alters the state of this ASTCompiler instance, such that after the call to
 	 * recurse returns, the generateFunction() method can be used to finish the code generation.
 	 */
-	recurse (ast, intoId, contextOut, returnFn, create, skipWatchIdCheck) {
+	recurse (ast, intoId, wantScope, returnFn, create, skipWatchIdCheck) {
 		if (!ast) return // any need to call returnFn() here before returning, or will it always already be noop?
 		const self = this
-		let left, right, args, obj, expression
+		let left, right, args, expression
 		returnFn = returnFn || noop
 		if (!skipWatchIdCheck && isDefined(ast.watchId)) {
 			intoId = intoId || this.nextId()
 			this.if_(
-				"i",
-				this.lazyAssignId(intoId, this.computedMember("i", ast.watchId)),
-				this.lazyRecurse(ast, intoId, contextOut, returnFn, create, true)
+				'i',
+				this.lazyAssignId(intoId, this.computedMember('i', ast.watchId)),
+				this.lazyRecurse(ast, intoId, wantScope, returnFn, create, true)
 			)
 			return
 		}
@@ -175,7 +170,7 @@ export class ASTCompiler {
 			case AST.TemplateBlock:
 				intoId = intoId || this.nextId(false, '[]')
 				ast.body.forEach(elem => self.recurse(elem, undefined, undefined, result => {
-					this.current().body.push(intoId, ".push(", result, ");")
+					this.current().body.push(intoId, '.push(', result, ');')
 				}))
 				returnFn(this.assignId(intoId, intoId + '.join("")'))
 				break
@@ -219,16 +214,15 @@ export class ASTCompiler {
 				break
 			case AST.ListField:
 				expression = self.nextId() // the list value itself
-				obj = {} // to receive the list value's context info
-				self.recurse(ast.expression, expression, obj) // get list value
+				self.recurse(ast.expression, expression, true) // get list value
 				right = self.assignId(self.nextId(), self.generateFunction(ast.content._lkey, "s")) // list content lambda
-				left = self.nextId(false, "") // var to hold result of list
+				left = self.nextId(false, '') // var to hold result of list concatenation
 				self.if_(
 					expression + '&&' + expression + '.length',
 					() => {
-						self.assignId(left, `${expression}.map(` +
-							`(e,i)=>${right}.call(undefined,ps(${obj.context}).ps(e,i,${expression}.length,${expression}.punc))` +
-						').join("")')
+						self.assignId(left, '[]')
+						self.forEachScope(expression, left, right)
+						self.assignId(left, left + '.join("")')
 					}
 				)
 				returnFn(left)
@@ -281,103 +275,59 @@ export class ASTCompiler {
 			case AST.Identifier:
 				if (self.stage === 'inputs') throw "error: this has been broken for inputs"
 				intoId = intoId || self.nextId()
-				if (contextOut || (create && create !== 1)) {
-					left = self.assignId(self.nextId(), self.lookupScopeOf(ast.name, ast.ns))
+				if (wantScope || (create && create !== 1)) {
+					self.assignId(intoId, self.lookupScope(ast.name, ast.ns))
 					if (create && create !== 1) {
 						self.if_(
-							self.isNull(self.getOwnValue(left, ast.name)),
+							self.and(self.scopeIsNull(intoId), intoId + '._parent'),
 							() => {
-								self.setOwnValue(left, ast.name, '{}', ast.ns)
+								self.setOwnValue(intoId + '._parent', ast.name, '{}', ast.ns)
+								self.assignId(intoId,
+									wantScope
+										? self.getOwnScope(intoId + '._parent', ast.name)
+										: self.getOwnValue(intoId + '._parent', ast.name)
+								)
 							}
 						)
 					}
-					self.assignId(intoId, self.getOwnValue(left, ast.name))
 				} else {
 					self.assignId(intoId, self.lookupValue(ast.name, ast.ns))
-				}
-				if (contextOut) {
-					contextOut.context = left
-					contextOut.name = ast.name
 				}
 				returnFn(intoId)
 				break
 			case AST.MemberExpression:
-				left = this.nextId() // object will be stored here
+				left = this.nextId() // object scope will be stored here
 				intoId = intoId || this.nextId() // whole member expression will be stored here
-				obj = {} // we need context info for the object
-				self.recurse(ast.object, left, obj, () => {
+				self.recurse(ast.object, left, true, () => {
 					if (ast.computed) {
 						right = self.nextId()
-						self.if_(
-							self.notNull(left),
-							function () {
-								self.recurse(ast.property, right)
-								self.setStringValue(right)
-								if (contextOut) {
-									contextOut.context = obj.context
-									contextOut.name = right
-									contextOut.computed = true
-								}
-								self.if_(
-									self.isScope(left),
-									function consequent () { // lhs is a scope; use scope accessors
-										self.assignId(intoId, self.getOwnValueDyn(left, right))
-										if (create && create !== 1) {
-											self.if_(
-												self.isNull(intoId),
-												() => {
-													self.setOwnValueDyn(left, right, '{}', ast.ns)
-													self.assignId(intoId, self.getOwnValueDyn(left, right))
-												},
-											)
-										}
-										if (contextOut) contextOut.object = intoId
-									},
-									function alternate () { // lhs is a primitive or array; use native accessors
-										const member = self.computedMember(left, right) // `${left}[${right}]`
-										self.assignId(intoId, member)
-										if (create && create !== 1) {
-											self.if_(
-												self.not(intoId),
-												() => {
-													self.assignId(member, '{}')
-													self.assignId(intoId, member)
-												}
-											)
-										}
-										if (contextOut) {
-											contextOut.object = left
-											self.if_(
-												self.isArray(left) + "&&" + self.isNumber(right), // numeric index into array
-												// avoid losing scope chain
-												self.lazyAssignId(intoId, `ps(${obj.context}).ps(${[intoId, right, left+'.length', left+'.punc'].join(',')})`)
-											)
-										}
-									}
-								)
-							}
-						)
-					} else { // !ast.computed
-						if (!obj.context) throw "what to do?"
-						const propName = ast.property.name
-						const base = obj.name === '_parent' ? left : obj.context+'.ps(' + left + ')'
-						expression = self.assignId(self.nextId(), base)
-						//const member = self.nonComputedMember(left, propName) // `${left}.${propName}` (plus some other checks)
+						self.recurse(ast.property, right)
 						if (create && create !== 1) {
 							self.if_(
-								self.isNull(self.getOwnValue(expression, propName)),
+								self.isNull(self.getOwnValueDyn(left, right)),
 								() => {
-									self.setOwnValue(expression, propName, '{}')
-								}
+									self.setOwnValueDyn(left, right, '{}', ast.ns)
+								},
 							)
 						}
-						self.assignId(intoId, self.getOwnValue(expression, propName))
-						if (contextOut) {
-							contextOut.object = left // native value of what's to the left of the .
-							contextOut.context = expression // context object of what's to the left of the .
-							contextOut.computed = false
-							contextOut.name = propName
+						self.assignId(intoId, wantScope
+							? self.getOwnScopeDyn(left, right)
+							: self.getOwnValueDyn(left, right)
+						)
+					} else { // !ast.computed
+						const propName = ast.property.name
+						if (create && create !== 1) {
+							self.if_(
+								self.isNull(self.getOwnValue(left, propName)),
+								() => {
+									self.setOwnValue(left, propName, '{}')
+								},
+							)
 						}
+						self.assignId(intoId, wantScope
+							? self.getOwnScope(left, propName)
+							: self.getOwnValue(left, propName)
+						)
 					}
 					returnFn(intoId)
 				}, !!create)
@@ -385,9 +335,8 @@ export class ASTCompiler {
 			case AST.CallExpression:
 				intoId = intoId || this.nextId()
 				right = self.nextId() // callee value -- the function to be called (ident for globals, member expr for methods)
-				obj = {} // callee contextual info
 				args = []
-				self.recurse(ast.callee, right, obj, function () {
+				self.recurse(ast.callee, right, true, function () {
 					self.if_(
 						self.notNull(right),
 						function () {
@@ -401,19 +350,8 @@ export class ASTCompiler {
 									}
 								)
 							})
-							expression = right + '.call(' + obj.context + '.valueOf(),' + args.join(',') + ')'
-							// if (obj.object /*obj.name || obj.context*/) {
-							// 	// right == v1, which is wrong (function instead of value on which function is invoked)
-							// 	// obj.context == v4, which is wrong (scope instead of raw value)
-							// 	// need access to v2, which is the object on which we need to call v1, but not sure how we should be getting it!
-							// 	// we could re-extract it from v4 by calling getObjectVal on it??  (even though it's already stored in v2?)
-							// 	expression = right + '.call(' + obj.context + ',' + args.join(',') + ')'
-							// 	// expression =
-							// 	// 	self.member(right, obj.name, obj.computed) +
-							// 	// 	"(" + args.join(",") + ")"
-							// } else {
-							// 	expression = right + "(" + args.join(",") + ")"
-							// }
+							expression = right + '.valueOf().call(' + right + '._parent.valueOf(),'
+								+ args.join(',') + ')'
 							self.assignId(intoId, expression)
 						},
 						function () {
@@ -424,19 +362,14 @@ export class ASTCompiler {
 				})
 				break
 			case AST.FilterExpression:
-				intoId = intoId || this.nextId()
-				right = self.filter(ast.filter.name)
-				args = []
-				obj = ast.lambda ? {} : undefined
-				left = self.nextId()
-				self.recurse(ast.input, left, obj)
+				intoId = intoId || this.nextId() // holds the final result of the filter
+				right = self.filter(ast.filter.name) // holds the filter function (to call)
+				args = [] // strings (ids/source code) representing each argument to the filter function
+				left = self.nextId() // to hold the evaluated input to the filter
+				self.recurse(ast.input, left, ast.lambda) // get the input
+				// add the INPUT to the filter function's argument list...
 				args.push(left)
-				if (ast.lambda) {
-					if (obj.context) // normal case, list value came from some parent context
-						args.push(obj.context)
-					else
-						args.push('ps(null)') // if no parent context, we must construct an empty one
-				}
+				// add the rest of the filter's arguments to the filter function'd argument list
 				ast.arguments.forEach(expr => {
 					const argId = self.nextId()
 					if (expr.type === AST.LambdaExpression || expr.type === AST.SortKeyExpression) {
@@ -451,10 +384,10 @@ export class ASTCompiler {
 				})
 				// call the filter function, passing in the arguments assembled above
 				expression = `${right}.call(undefined,${args.join(',')})`
-				self.assignId(intoId, expression)
-				if (contextOut) {
-					contextOut.context = self.assignId(self.nextId(), 'ps(s)')
-				}
+				self.assignId(intoId, wantScope
+					? self.pushScope(expression)
+					: expression
+				)
 				returnFn(intoId)
 				break
 			case AST.LambdaExpression:
@@ -462,12 +395,17 @@ export class ASTCompiler {
 				// currently no-op; already handled earlier in lambda pass
 				break
 			case AST.AssignmentExpression:
+				left = this.nextId()
 				right = this.nextId()
-				obj = {}
-				this.recurse(ast.left, undefined, obj, () => {
-					self.recurse(ast.right, right)
-					self.setOwnValue(obj.context, obj.name, right, ast.ns)
-					self.assignId(intoId, self.getOwnValue(obj.context, obj.name))
+				this.recurse(ast.left, left, true, () => {
+					self.if_(
+						self.and(left + '._parent', left + '.name'),
+						() => {
+							self.recurse(ast.right, right)
+							self.setOwnValueDyn(left + '._parent', left + '.name', right, ast.ns)
+							self.assignId(intoId, self.getOwnValueDyn(left + '._parent', left + '.name'))
+						}
+					)
 					returnFn(intoId || right)
 				}, 1)
 				break
@@ -483,7 +421,10 @@ export class ASTCompiler {
 						}
 					)
 				})
-				expression = "[" + args.join(",") + "]"
+				expression = '[' + args.join(',') + ']'
+				if (wantScope) {
+					expression = this.pushScope(expression)
+				}
 				this.assignId(intoId, expression)
 				returnFn(intoId || expression)
 				break
@@ -497,7 +438,7 @@ export class ASTCompiler {
 							left = self.nextId()
 							self.recurse(property.key, left)
 						} else {
-							left = property.key.type === AST.Identifier ? property.key.name : "" + property.key.value
+							left = property.key.type === AST.Identifier ? property.key.name : property.key.value + ''
 						}
 						right = self.nextId()
 						self.recurse(property.value, right)
@@ -511,24 +452,27 @@ export class ASTCompiler {
 							undefined,
 							function (expr) {
 								args.push(
-									self.escape(property.key.type === AST.Identifier ? property.key.name : "" + property.key.value )
+									self.escape(property.key.type === AST.Identifier ? property.key.name : property.key.value + '')
 									  + ":" + expr
 								)
 							}
 						)
 					})
 					expression = "{" + args.join(",") + "}"
+					if (wantScope) {
+						expression = this.pushScope(expression)
+					}
 					this.assignId(intoId, expression)
 				}
 				returnFn(intoId || expression)
 				break
 			case AST.ThisExpression:
 				this.useScope()
-				this.assignId(intoId, "c.getOwnVal()")
-				if (contextOut) {
-					contextOut.context = this.assignId(this.nextId(), "c._parent")
-				}
-				returnFn(intoId || "c.getOwnVal()")
+				expression = wantScope
+					? 'c'
+					: 'c.valueOf()'
+				this.assignId(intoId, expression)
+				returnFn(intoId || expression)
 				break
 			case AST.NGValueParameter:
 				this.assignId(intoId, "v")
@@ -552,7 +496,7 @@ export class ASTCompiler {
 	useScope () {
 		const own = this.current().own
 		if (!own.hasOwnProperty('_scope_')) {
-			this.current().vars.push('c=ps(s)')
+			this.current().vars.push('c=use(s)')
 			own['_scope_'] = 'c'
 		}
 	}
@@ -576,52 +520,64 @@ export class ASTCompiler {
 		this.current().body.push(id, ".push(", value, ");")
 	}
 
-	lookupValue (name, ns) {
+	pushScope (expression) {
 		this.useScope()
-		return 'c.lookupVal("' + name + (ns ? '","' + ns : '') + '")'
+		return 'c.pushScope(' + expression + ')'
 	}
 
-	lookupScopeOf (name, ns) {
+	lookupScope (name, ns) {
 		this.useScope()
 		return 'c.lookupScope("' + name + (ns ? '","' + ns : '') + '")'
 	}
 
-	getOwnValue (scope, name) {
+	lookupValue (name, ns) {
 		this.useScope()
-		return scope + '.getOwnVal("' + name + '")'
+		return 'c.lookupValue("' + name + (ns ? '","' + ns : '') + '")'
 	}
 
-	getOwnValueDyn (scope, id) {
-		this.useScope()
-		return scope + '.getOwnVal(' + id + ')'
+	getOwnScope (scopeId, name) {
+		return this.getOwnScopeDyn(scopeId, '"' + name + '"')
 	}
 
-	hasOwnValue (scope, name) {
+	getOwnScopeDyn (scopeId, id) {
 		this.useScope()
-		return scope + '.hasOwnVal("' + name + '")'
+		return scopeId + '.getOwnScope(' + id + ')'
 	}
 
-	hasOwnValueDyn (scope, id) {
+	forEachScope (scopeId, accumulatorId, lambdaId) {
 		this.useScope()
-		return scope + '.hasOwnVal(' + id + ')'
+		const result = scopeId + '.forEachScope(es=>'
+			+ accumulatorId + '.push(' + lambdaId + '.call(undefined,es)))'
+		this.current().body.push(result, ';')
 	}
 
-	setOwnValue (scope, name, value, ns) {
+	hasOwnValue (scopeId, name) {
+		return this.hasOwnValueDyn(scopeId, '"' + name + '"')
+	}
+
+	hasOwnValueDyn (scopeId, id) {
+		this.useScope()
+		return scopeId + '.hasOwnValue(' + id + ')'
+	}
+
+	getOwnValue (scopeId, name) {
+		return this.getOwnValueDyn(scopeId, '"' + name + '"')
+	}
+
+	getOwnValueDyn (scopeId, id) {
+		this.useScope()
+		return scopeId + '.getOwnValue(' + id + ')'
+	}
+
+	setOwnValue (scopeId, name, value, ns) {
+		return this.setOwnValueDyn(scopeId, '"' + name + '"', value, ns)
+	}
+
+	setOwnValueDyn (scopeId, id, value, ns) {
 		this.useScope()
 		this.current().body.push( // whoever actually pushes a command onto body is responsible for the ';':
-			scope + '.setOwnVal("' + name + '",' + value + (ns ? ',"' + ns + '"' : '') + ');'
+			scopeId + '.setOwnValue(' + id + ',' + value + (ns ? ',"' + ns + '"' : '') + ');'
 		)
-	}
-
-	setOwnValueDyn (scope, id, value, ns) {
-		this.useScope()
-		this.current().body.push( // whoever actually pushes a command onto body is responsible for the ';':
-			scope + '.setOwnVal(' + id + ',' + value + (ns ? ',"' + ns + '"' : '') + ');'
-		)
-	}
-
-	isScope (id) {
-		return 'iss(' + id + ')'
 	}
 
 	isArray (id) {
@@ -673,10 +629,10 @@ export class ASTCompiler {
 	// "lazy" functions are just conveniences to curry calls to recurse and setValue,
 	// used only in conjunction with _if() (which expects curried functions for its
 	// consequentFn and alternateFn parameters).
-	lazyRecurse (ast, intoId, contextOut, returnFn, create, skipWatchIdCheck) {
+	lazyRecurse (ast, intoId, wantScope, returnFn, create, skipWatchIdCheck) {
 		const self = this
 		return function () {
-			self.recurse(ast, intoId, contextOut, returnFn, create, skipWatchIdCheck)
+			self.recurse(ast, intoId, wantScope, returnFn, create, skipWatchIdCheck)
 		}
 	}
 
@@ -689,6 +645,16 @@ export class ASTCompiler {
 
 	not (expression) {
 		return "!(" + expression + ")"
+	}
+
+	and (left, right, needParens = false) {
+		return needParens
+		  ? `(${left})&&(${right})`
+		  : left + "&&" + right
+	}
+
+	scopeIsNull (scopeId) {
+		return scopeId + '.isNull()'
 	}
 
 	isNull (expression) {
@@ -711,7 +677,7 @@ export class ASTCompiler {
 	nonComputedMember (left, right) {
 		const SAFE_IDENTIFIER = /^[$_a-zA-Z][$_a-zA-Z0-9]*$/
 		const UNSAFE_CHARACTERS = /[^$_a-zA-Z0-9]/g
-		let expr = ""
+		let expr = ''
 		if (SAFE_IDENTIFIER.test(right)) {
 			expr = left + "." + right
 		} else {
@@ -719,10 +685,6 @@ export class ASTCompiler {
 			expr = left + '["' + right + '"]'
 		}
 		return expr
-	}
-
-	setStringValue (item) {
-		this.assignId(item, "gsv(" + item + ")")
 	}
 
 	stringEscapeFn (c) {
@@ -741,9 +703,9 @@ export class ASTCompiler {
 	}
 
 	nextId (skip, init) {
-		const id = "v" + this.state.nextId++
+		const id = 'v' + this.state.nextId++
 		if (!skip) {
-			this.current().vars.push(id + (init ? "=" + init : ""))
+			this.current().vars.push(id + (init ? '=' + init : ''))
 		}
 		return id
 	}

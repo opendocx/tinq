@@ -2,7 +2,7 @@ import { format as dateFnsFormat } from 'date-fns'
 import numeral from 'numeral'
 import numWords from 'number-to-words-en'
 import deepEqual from 'fast-deep-equal'
-import { useScope, parseListExample } from './scope.mjs'
+import { parseListExample } from './scope.mjs'
 import { unEscapeQuotes, isIterable } from './utils.mjs'
 
 // define built-in filters
@@ -219,10 +219,14 @@ function keepsections (input) {
 
 // runtime implementation of list filters:
 
-function sort (array, parentScope) {
-  if (!Array.isArray(array) || !array.length || arguments.length < 2) return array
+function sort (arrayScope) {
+  if (arrayScope.type !== 'array') {
+    throw new Error('sort filter requires an array scope')
+  }
+  const array = arrayScope.valueOf()
+  if (!array.length || arguments.length < 2) return array
   const sortBy = []
-  let i = 2
+  let i = 1 // skip first (scope) argument; rest are sort keys
   while (i < arguments.length) {
     // TODO: what is argument at this point?
     const sortKeyLambda = arguments[i++]
@@ -236,8 +240,8 @@ function sort (array, parentScope) {
       depth = 0
     }
     if (depth >= sortBy.length) { return 0 }
-    const valA = sortBy[depth].evaluator(a, a) // sort expressions must only refer to stuff in the current list item
-    const valB = sortBy[depth].evaluator(b, b)
+    const valA = sortBy[depth].evaluator(a) // sort expressions must only refer to stuff in the current list item
+    const valB = sortBy[depth].evaluator(b)
     if (valA < valB) { return sortBy[depth].descending ? 1 : -1 }
     if (valA > valB) { return sortBy[depth].descending ? -1 : 1 }
     return compare(a, b, depth + 1)
@@ -247,84 +251,96 @@ function sort (array, parentScope) {
 sort.listFilter = true
 sort.keyFilter = true
 
-function filter (array, parentScope, predicate) {
-  if (!array || !array.length) return array
-  return callArrayFunc(Array.prototype.filter, array, parentScope, predicate, 'filter')
+function filter (arrayScope, predicate) {
+  return callArrayFunc(Array.prototype.filter, arrayScope, predicate, 'filter')
 }
 filter.listFilter = true
 
-function find (array, parentScope, predicate) {
-  if (!array || !array.length) return null
-  return callArrayFunc(Array.prototype.find, array, parentScope, predicate, 'find')
+function find (arrayScope, predicate) {
+  if (arrayScope.type === 'null' || !arrayScope.length) return null
+  return callArrayFunc(Array.prototype.find, arrayScope, predicate, 'find')
 }
 find.listFilter = true
 
-function any (array, parentScope, predicate) {
-  if (!array || !array.length) return false
-  return callArrayFunc(Array.prototype.some, array, parentScope, predicate, 'any')
+function any (arrayScope, predicate) {
+  if (arrayScope.type === 'null' || !arrayScope.length) return false
+  return callArrayFunc(Array.prototype.some, arrayScope, predicate, 'any')
 }
 any.aliases = ['some']
 any.ident = 'any' // canonical name for normalization
 any.listFilter = true
 any.rtlFilter = true
 
-function every (array, parentScope, predicate) {
-  if (!array || !array.length) return true
-  return callArrayFunc(Array.prototype.every, array, parentScope, predicate, 'every')
+function every (arrayScope, predicate) {
+  if (arrayScope.type === 'null' || !arrayScope.length) return true
+  return callArrayFunc(Array.prototype.every, arrayScope, predicate, 'every')
 }
 every.aliases = ['all']
 every.ident = 'every' // canonical name for normalization
 every.listFilter = true
 every.rtlFilter = true
 
-function map (array, parentScope, mapLambda) {
-  return callArrayFunc(Array.prototype.map, array, parentScope, mapLambda, 'map')
+function map (arrayScope, mapLambda) {
+  return callArrayFunc(Array.prototype.map, arrayScope, mapLambda, 'map')
 }
 map.listFilter = true
 
-function group (array, parentScope, groupLambda) {
-  if (!Array.isArray(array) || arguments.length < 2) {
-    return array
+function group (arrayScope, groupLambda) {
+  if (arrayScope.type === 'null') return arrayScope.valueOf()
+  if (arrayScope.type !== 'array') {
+    throw new Error('group filter requires an array scope')
   }
-  if (array.length === 0) return []
-  const grouped = array.reduce(
-    (result, item, index) => {
-      /* const key = lScope.evaluate(groupLambda).toString() */
-      let key = groupLambda(parentScope.ps(item, index, array.length))
-      key = key && key.valueOf() // ensure wrapped primitives and dates are unwrapped too
-      let bucket = result.find(b => b._key === key)
-      if (!bucket) {
-        bucket = { _key: key, _values: [] }
-        result.push(bucket)
-      }
-      bucket._values.push(item)
-      return result
-    },
-    []
-  )
+  const array = arrayScope.valueOf()
+  // const parentScope = arrayScope._parent
+  let grouped
+  if (array.length === 0) {
+    grouped = []
+  } else {
+    grouped = array.reduce(
+      (result, item, index) => {
+        let key = groupLambda(arrayScope.getOwnScope(index))
+        key = key && key.valueOf() // ensure wrapped primitives and dates are unwrapped too
+        let bucket = result.find(b => b._key === key)
+        if (!bucket) {
+          bucket = { _key: key, _values: [] }
+          result.push(bucket)
+        }
+        bucket._values.push(item)
+        return result
+      },
+      []
+    )
+  }
   return grouped
 }
 group.listFilter = true
 
-function reduce (array, parentScope, reducerLambda, initValue = undefined) {
-  if (!Array.isArray(array) || arguments.length < 2) {
-    return array
+function reduce (arrayScope, reducerLambda, initValue = undefined) {
+  if (arrayScope.type === 'null') return arrayScope.valueOf()
+  if (arrayScope.type !== 'array') {
+    throw new Error('reduce filter requires an array scope')
   }
-  if (array.length === 0) return initValue
-  const input0 = array[0]
-  const yobj0 = input0 && input0.__yobj
-  const list = Scope.pushList(array, yobj0 && yobj0.getParentEffective())
-  const reduced = array.items.reduce(
-    (result, item, index) => {
-      if (index === 0 && initValue === undefined) {
-        return item
-      } // else
-      const reducerItemFrame = parentScope.ps(item, index, array.length)
-      reducerItemFrame._result = result
-      return reducerLambda(reducerItemFrame)
-    },
-    initValue
-  )
+  const array = arrayScope.valueOf()
+  // const parentScope = arrayScope._parent
+  let reduced
+  if (array.length === 0) {
+    reduced = initValue
+  } else {
+    const input0 = array[0]
+    const yobj0 = input0 && input0.__yobj
+    const list = Scope.pushList(array, yobj0 && yobj0.getParentEffective())
+    reduced = array.items.reduce(
+      (result, item, index) => {
+        if (index === 0 && initValue === undefined) {
+          return item
+        } // else
+        const reducerItemFrame = arrayScope.getOwnScope(index)
+        reducerItemFrame._result = result
+        return reducerLambda(reducerItemFrame)
+      },
+      initValue
+    )
+  }
   return reduced
 }
 reduce.listFilter = true
@@ -332,11 +348,16 @@ reduce.listFilter = true
 
 // helper functions
 
-function callArrayFunc (func, array, parentScope, predicateLambda, funcName) {
-  if (!array) return array
-  // if (array instanceof Scope) throw new Error('Unexpected scope as list filter input')
-  if (!Array.isArray(array) || arguments.length < 2) {
-    return array // maybe we should throw instead...
+// callArrayFunc accepts an "array scope" and returns a regular array
+function callArrayFunc (func, arrayScope, predicateLambda, funcName) {
+  if (arrayScope.type === 'null') return arrayScope.valueOf()
+  if (arrayScope.type !== 'array') {
+    throw new Error('list filters require an array scope')
+  }
+  const array = arrayScope.valueOf()
+  // const parentScope = arrayScope._parent
+  if (!predicateLambda) {
+    throw new Error('no predicate supplied to callArrayFunc')
   }
   if (typeof predicateLambda !== 'function') {
     let filter = 'a list'
@@ -345,10 +366,8 @@ function callArrayFunc (func, array, parentScope, predicateLambda, funcName) {
     }
     throw new Error(`Invalid argument passed to ${filter} filter: ${predicateLambda}`)
   }
-
   const result = func.call(array, (item, index) => (
-    predicateLambda(parentScope.ps(item, index, array.length))
+    predicateLambda(arrayScope.getOwnScope(index))
   ))
-  // const result = func.call(array, (item) => evaluator(item.scopeProxy))
   return result
 }

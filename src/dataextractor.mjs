@@ -34,10 +34,10 @@ export class DataExtractor {
     return fn
   }
 
-  recurse (ast, contextOut) {
+  recurse (ast, wantScope) {
     if (!ast) return noop
     const self = this
-    let key, expr, left, right, args, obj, expression
+    let key, expr, left, right, args, expression
     switch (ast.type) {
       case AST.Program:
       case AST.TemplateBlock:
@@ -70,18 +70,16 @@ export class DataExtractor {
         }
       case AST.ListField:
         expr = AST.serialize(ast.expression)
-        obj = {}
-        expression = this.recurse(ast.expression, obj)
+        expression = this.recurse(ast.expression, true)
         right = this.recurse(ast.content) // in essence a lambda
         return function list_field (scope) {
-          const exprListValue = expression(scope)
+          const exprListScope = expression(scope)
           const listAtom = ast.key || expr
           self._startList(listAtom)
-          if (exprListValue) {
+          if (exprListScope.type === 'array') {
             const itemAtom = ast.key ? ast.key + 'i' : expr + '_ITEM'
             const puncAtom = ast.key ? ast.key + 'p' : expr + '_PUNC'
-            exprListValue.forEach((item, index) => {
-              const itemScope = obj.context.ps(item, index, exprListValue.length, exprListValue.punc)
+            exprListScope.forEachScope(itemScope => {
               self._startListItem(itemAtom)
               right.call(undefined, itemScope)
               self._endListItem(puncAtom, itemScope._punc)
@@ -144,80 +142,33 @@ export class DataExtractor {
         if (self.stage === 'inputs') throw "error: this has been broken for inputs"
         return function identifier_ (scope, assign, inputs) {
           const c = useScope(scope)
-          let base, value
-          if (contextOut) {
-            base = c.lookupScope(ast.name, ast.ns)
-            value = base.getOwnVal(ast.name)
-          } else {
-            value = c.lookupVal(ast.name, ast.ns)
-          }
-          if (contextOut) {
-            contextOut.context = base
-            contextOut.name = ast.name
-          }
-          return value
+          return wantScope
+            ? c.lookupScope(ast.name, ast.ns)
+            : c.lookupValue(ast.name, ast.ns)
         }
       case AST.MemberExpression:
-        obj = {} // we need context info for the object
-        left = this.recurse(ast.object, obj)
+        left = this.recurse(ast.object, true)
         if (ast.computed) {
           right = this.recurse(ast.property)
           return function member_computed (scope, assign, inputs) {
             const lhs = left(scope, assign, inputs)
-            let value
-            let rhs = right(scope, assign, inputs)
-            rhs = getStringValue(rhs)
-            if (contextOut) {
-              contextOut.context = obj.context
-              contextOut.name = rhs
-              contextOut.computed = true
-            }
-            if (isScope(lhs)) {
-              value = lhs.getOwnVal(rhs)
-              if (contextOut) {
-                contextOut.object = value
-              }
-            } else { // should be primitive or array
-              value = lhs && lhs[rhs]
-              if (contextOut) {
-                contextOut.object = isScope(lhs) ? lhs.getOwnVal() : lhs
-                if (!isNaN(rhs)) { // numeric index into array; avoid losing scope chain!
-                  if (Array.isArray(lhs)) {
-                    value = useScope(obj.context).ps(value, rhs, lhs.length, lhs.punc)
-                  } else {
-                    value = useScope(obj.context).ps(value, rhs, 0)
-                  }
-                }
-              }
-            }
-            return value
+            const rhs = right(scope, assign, inputs)
+            return wantScope
+              ? lhs.getOwnScope(rhs)
+              : lhs.getOwnValue(rhs)
           }
         } else { // !ast.computed
           const propName = ast.property.name
           return function member_named (scope, assign, inputs) {
-            const lhs = left(scope, assign, inputs) // alert: lhs can be a Scope IF left is a computed member expression!
-            if (!obj.context) throw "what to do?" // maybe base = pushScope(lhs)??
-            // handle special case for _parent identifier, whose value is already a scope!
-            const base = obj.name === '_parent' ? lhs : obj.context.ps(lhs)
-            const value = base.getOwnVal(propName)
-            if (contextOut) {
-              contextOut.object = isScope(lhs) ? lhs.getOwnVal() : lhs // contextOut.object should not be a Scope
-              contextOut.context = base
-              contextOut.computed = false
-              contextOut.name = propName
-            }
-            return value
+            const lhs = left(scope, assign, inputs)
+            return wantScope
+              ? lhs.getOwnScope(propName)
+              : lhs.getOwnValue(propName)
           }
         }
       case AST.CallExpression:
-        obj = {} // callee contextual info
         args = []
-        right = this.recurse(ast.callee, obj) // 2nd arg=={} means we are requesting the result's context
-          // as well as its value. If the result is a function to be called, its context is the object ON WHICH
-          // that function should be called)... and Knackly uses this ALL THE TIME, whenever (e.g.)
-          // someone calls prototype methods on text strings, numbers, etc.
-          // This is so the function can ultimately be invoked with "this" referring to the right thing
-          // (see `rhs.value.apply(rhs.context, values)` below)
+        right = this.recurse(ast.callee, true)
         ast.arguments.forEach(expr => {
           args.push(self.recurse(expr))
         })
@@ -226,7 +177,7 @@ export class DataExtractor {
           let value
           if (rhs != null) {
             const argValues = args.map(arg => arg(scope, assign, inputs))
-            value = rhs.apply(obj.context.valueOf(), argValues)
+            value = rhs.valueOf().apply(rhs._parent.valueOf(), argValues)
           }
           return value
         }
@@ -236,25 +187,16 @@ export class DataExtractor {
         // These functions expect the first argument to be the INPUT to the filter.
         // ARGUMENTS to the filter (if any) are passed as SUBSEQUENT arguments to this function. 
         args = [] // (for the filter function to be called)
-        obj = ast.lambda ? {} : undefined // for list filters, we need the filter input's context!
-        args.push(self.recurse(ast.input, obj))
+        args.push(self.recurse(ast.input, ast.lambda))
         ast.arguments.forEach(expr => {
           args.push(self.recurse(expr))
         })
         return function filter_expr (scope, assign, inputs) {
-          const argValues = []
-          args.forEach((arg, i) => {
-            const result = arg(scope, assign, inputs)
-            argValues.push(result)
-            if (i === 0 && obj) { // list filter functions get the parent context as the 2nd argument!
-              argValues.push(obj.context || useScope(null)) // must have a context, even if null
-            }
-          })
+          const argValues = args.map(arg => arg(scope, assign, inputs))
           const value = right.apply(undefined, argValues, inputs) // bug/question (inherited from angular-expressions): does 3rd argument to apply() actually DO anything?  (it's not documented anywhere I have found!)
-          if (contextOut) {
-            contextOut.context = useScope(scope)
-          }
-          return value
+					return wantScope
+						? useScope(scope).pushScope(value)
+						: value
         }
       case AST.LambdaExpression:
         right = self.recurse(ast.expression)
@@ -271,7 +213,10 @@ export class DataExtractor {
           args.push(self.recurse(expr))
         })
         return function array_expr (scope, assign, inputs) {
-          return args.map(arg => arg(scope, assign, inputs))
+					const value = args.map(arg => arg(scope, assign, inputs))
+					return wantScope
+					  ? useScope(scope).pushScope(value)
+						: value
         }
       case AST.ObjectExpression:
         args = []
@@ -284,7 +229,7 @@ export class DataExtractor {
             })
           } else {
             args.push({
-              key: property.key.type === AST.Identifier ? property.key.name : "" + property.key.value,
+              key: property.key.type === AST.Identifier ? property.key.name : property.key.value + '',
               computed: false,
               value: self.recurse(property.value),
             })
@@ -299,15 +244,16 @@ export class DataExtractor {
               value[arg.key] = arg.value(scope, assign, inputs)
             }
           }
-          return value
+					return wantScope
+						? scope.pushScope(value)
+					 	: value
         }
       case AST.ThisExpression:
         return function this_expr (scope) {
           const c = useScope(scope)
-          if (contextOut) {
-            contextOut.context = c._parent
-          }
-          return c.getOwnVal()
+					return wantScope
+					  ? c
+						: c.valueOf()
         }
     }
   }

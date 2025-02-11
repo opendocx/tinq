@@ -379,7 +379,7 @@ describe("tinql.templater", function() {
         it('should assemble a simple template with local and global scopes', function () {
           const template = '{[First]} {[Middle ? Middle + " " : ""]}{[Last]}'
           evaluate = tinql.compileTemplate(template)
-          const scope = useScope({ Last: 'Smith' }).ps({ First: 'John' }) // Last is "global", First is "local"
+          const scope = useScope({ Last: 'Smith' }).pushScope({ First: 'John' }) // Last is "global", First is "local"
           const result = evaluate(scope)
           assert.strictEqual(result, 'John Smith')
         })

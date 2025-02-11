@@ -1,5 +1,5 @@
 import { isConstant, isDefined, isLiteral, isString, isNumber, getStringValue, ifDefined, plusFn, assignableAST, isAssignable, getInputs, findConstantExpressions, noop } from "./utils.mjs";
-import { useScope, isScope } from "./scope.mjs"
+import { useScope } from "./scope.mjs"
 import { AST } from "./ast.mjs";
 
 export class ASTInterpreter {
@@ -59,10 +59,10 @@ export class ASTInterpreter {
 		return fn
 	}
 
-	recurse (ast, contextOut, create) {
+	recurse (ast, wantScope, create) {
 		if (!ast) return noop
 		const self = this
-		let left, right, args, obj, expression
+		let left, right, args, expression
 		// if (ast.winput) {
 		// 	return this.inputs(ast.winput, ast.watchId)
 		// }
@@ -93,17 +93,15 @@ export class ASTInterpreter {
 					return value
 				}
 			case AST.ListField:
-				obj = {}
-				expression = this.recurse(ast.expression, obj)
+				expression = this.recurse(ast.expression, true)
 				right = this.recurse(ast.content) // in essence a lambda
 				return function list_field (scope) {
-					const exprListValue = expression(scope)
-					if (exprListValue && exprListValue.length) {
-						const results = exprListValue.map(
-							(item, index) => right.call(undefined,
-								obj.context.ps(item, index, exprListValue.length, exprListValue.punc)
-							)
-						)
+					const exprListScope = expression(scope)
+					if (exprListScope && exprListScope.length) {
+						const results = []
+						exprListScope.forEachScope(enumScope => {
+							results.push(right.call(undefined, enumScope))
+						})
 						return results.join('')
 					}
 					return ''
@@ -163,103 +161,55 @@ export class ASTInterpreter {
 				if (self.stage === 'inputs') throw "error: this has been broken for inputs"
 				return function identifier_ (scope, assign, inputs) {
 					const c = useScope(scope)
-					let base, value
-					if (contextOut || (create && create !== 1)) {
-						base = c.lookupScope(ast.name, ast.ns)
-						if (create && create !== 1
-							&& base.getOwnVal(ast.name) == null
-						) {
-							base.setOwnVal(ast.name, {}, ast.ns)
+					let value
+					if (wantScope || (create && create !== 1)) {
+						value = c.lookupScope(ast.name, ast.ns)
+						if (create && create !== 1) {
+							if (value.isNull() && value._parent) {
+								value._parent.setOwnValue(ast.name, {}, ast.ns)
+								value = wantScope
+								  ? value._parent.getOwnScope(ast.name)
+									: value._parent.getOwnValue(ast.name)
+							}
 						}
-						value = base.getOwnVal(ast.name)
 					} else {
-						value = c.lookupVal(ast.name, ast.ns)
-					}
-					if (contextOut) {
-						contextOut.context = base
-						contextOut.name = ast.name
+						value = c.lookupValue(ast.name, ast.ns)
 					}
 					return value
 				}
 			case AST.MemberExpression:
-				obj = {} // we need context info for the object
-				left = this.recurse(ast.object, obj, !!create)
+				left = this.recurse(ast.object, true, !!create)
 				if (ast.computed) {
 					right = this.recurse(ast.property)
 					return function member_computed (scope, assign, inputs) {
 						const lhs = left(scope, assign, inputs)
-						let value
-						let rhs = right(scope, assign, inputs)
-						rhs = getStringValue(rhs)
-						if (contextOut) {
-							contextOut.context = obj.context
-							contextOut.name = rhs
-							contextOut.computed = true
-						}
-						if (isScope(lhs)) {
-							value = lhs.getOwnVal(rhs)
-							if (create && create !== 1) {
-								if (!value) {
-									lhs.setOwnVal(rhs, {})
-									value = lhs.getOwnVal(rhs)
-								}
-							}
-							if (contextOut) {
-								contextOut.object = value
-							}
-						} else { // should be primitive or array
-							if (lhs) {
-								value = lhs[rhs]
-								if (create && create !== 1) {
-									if (!value) {
-										value = lhs.value[rhs] = {}
-									}
-								}
-							}
-							if (contextOut) {
-								contextOut.object = isScope(lhs) ? lhs.getOwnVal() : lhs
-								if (!isNaN(rhs)) { // numeric index into array; // avoid losing scope chain!
-									if (Array.isArray(lhs)) {
-										value = useScope(obj.context).ps(value, rhs, lhs.length, lhs.punc)
-									} else {
-										value = useScope(obj.context).ps(value, rhs, 0)
-									}
-								}
+						const rhs = right(scope, assign, inputs)
+						if (create && create !== 1) {
+							if (lhs.getOwnValue(rhs) == null) {
+								lhs.setOwnValue(rhs, {})
 							}
 						}
-						return value
+						return wantScope
+							? lhs.getOwnScope(rhs)
+							: lhs.getOwnValue(rhs)
 					}
 				} else { // !ast.computed
 					const propName = ast.property.name
 					return function member_named (scope, assign, inputs) {
-						const lhs = left(scope, assign, inputs) // alert: lhs can be a Scope IF left is a computed member expression!
-						if (!obj.context) throw "what to do?" // maybe base = pushScope(lhs)??
-						// handle special case for _parent identifier, whose value is already a scope!
-						const base = obj.name === '_parent' ? lhs : obj.context.ps(lhs)
+						const lhs = left(scope, assign, inputs)
 						if (create && create !== 1) { // when create===1 that means we're called by an assignment so no need to create
-							if (base.getOwnVal(propName) == null) {
-								base.setOwnVal(propName, {})
+							if (lhs.getOwnValue(propName) == null) {
+								lhs.setOwnValue(propName, {})
 							}
 						}
-						const value = base.getOwnVal(propName)
-						if (contextOut) {
-							contextOut.object = isScope(lhs) ? lhs.getOwnVal() : lhs // contextOut.object should not be a Scope
-							contextOut.context = base
-							contextOut.computed = false
-							contextOut.name = propName
-						}
-						return value
+						return wantScope
+							? lhs.getOwnScope(propName)
+							: lhs.getOwnValue(propName)
 					}
 				}
 			case AST.CallExpression:
-				obj = {} // callee contextual info
 				args = []
-				right = this.recurse(ast.callee, obj) // 2nd arg=={} means we are requesting the result's context
-					// as well as its value. If the result is a function to be called, its context is the object ON WHICH
-					// that function should be called)... and Knackly uses this ALL THE TIME, whenever (e.g.)
-					// someone calls prototype methods on text strings, numbers, etc.
-					// This is so the function can ultimately be invoked with "this" referring to the right thing
-					// (see `rhs.value.apply(rhs.context, values)` below)
+				right = this.recurse(ast.callee, true)
 				ast.arguments.forEach(expr => {
 					args.push(self.recurse(expr))
 				})
@@ -268,7 +218,7 @@ export class ASTInterpreter {
 					let value
 					if (rhs != null) {
 						const argValues = args.map(arg => arg(scope, assign, inputs))
-						value = rhs.apply(obj.context.valueOf(), argValues)
+						value = rhs.valueOf().apply(rhs._parent.valueOf(), argValues)
 					}
 					return value
 				}
@@ -278,25 +228,16 @@ export class ASTInterpreter {
 				// These functions expect the first argument to be the INPUT to the filter.
 				// ARGUMENTS to the filter (if any) are passed as SUBSEQUENT arguments to this function. 
 				args = [] // (for the filter function to be called)
-				obj = ast.lambda ? {} : undefined // for list filters, we need the filter input's context!
-				args.push(self.recurse(ast.input, obj))
+				args.push(self.recurse(ast.input, ast.lambda)) // for list filters, we need the filter input's context!
 				ast.arguments.forEach(expr => {
 					args.push(self.recurse(expr))
 				})
 				return function filter_expr (scope, assign, inputs) {
-					const argValues = []
-					args.forEach((arg, i) => {
-						const result = arg(scope, assign, inputs)
-						argValues.push(result)
-						if (i === 0 && obj) { // list filter functions get the parent context as the 2nd argument!
-							argValues.push(obj.context || useScope(null)) // must have a context, even if null
-						}
-					})
+					const argValues = args.map(arg => arg(scope, assign, inputs))
 					const value = right.apply(undefined, argValues, inputs) // bug/question (inherited from angular-expressions): does 3rd argument to apply() actually DO anything?  (it's not documented anywhere I have found!)
-					if (contextOut) {
-						contextOut.context = useScope(scope)
-					}
-					return value
+					return wantScope
+						? useScope(scope).pushScope(value)
+						: value
 				}
 			case AST.LambdaExpression:
 				right = self.recurse(ast.expression)
@@ -308,17 +249,16 @@ export class ASTInterpreter {
 				}
 				return function sort_key () { return right }
 			case AST.AssignmentExpression:
-				obj = {}
-				left = this.recurse(ast.left, obj, 1) // 2nd arg=={} means we are requesting both the value (the
-				// ...value that is being re-assigned) AND its context (the object ON WHICH that value exists)
-				// This is so the value reassignment can happen on the correct object
-				// (see `lhs.context[lhs.name] = rhs` below)
+				left = this.recurse(ast.left, true, 1)
 				right = this.recurse(ast.right)
 				return function assign_expr (scope, assign, inputs) {
-					left(scope, assign, inputs) // need to call because this is what actually populates obj!
-					const rhs = right(scope, assign, inputs)
-					obj.context.setOwnVal(obj.name, rhs, ast.ns)
-					return obj.context.getOwnVal(obj.name) // should === rhs but just to be sure
+					const lhs = left(scope, assign, inputs) // need to call because this is what actually determines context!
+					if (lhs._parent && lhs.name) {
+						const rhs = right(scope, assign, inputs)
+						lhs._parent.setOwnValue(lhs.name, rhs, ast.ns)
+						// todo: shouldn't we be checking contextOut here and returning a scope if requested?
+						return lhs._parent.getOwnValue(lhs.name) // should === rhs but just to be sure
+					}
 				}
 			case AST.ArrayExpression:
 				args = []
@@ -326,7 +266,10 @@ export class ASTInterpreter {
 					args.push(self.recurse(expr))
 				})
 				return function array_expr (scope, assign, inputs) {
-					return args.map(arg => arg(scope, assign, inputs))
+					const value = args.map(arg => arg(scope, assign, inputs))
+					return wantScope
+					  ? useScope(scope).pushScope(value)
+						: value
 				}
 			case AST.ObjectExpression:
 				args = []
@@ -339,7 +282,7 @@ export class ASTInterpreter {
 						})
 					} else {
 						args.push({
-							key: property.key.type === AST.Identifier ? property.key.name : "" + property.key.value,
+							key: property.key.type === AST.Identifier ? property.key.name : property.key.value + '',
 							computed: false,
 							value: self.recurse(property.value),
 						})
@@ -354,15 +297,16 @@ export class ASTInterpreter {
 							value[arg.key] = arg.value(scope, assign, inputs)
 						}
 					}
-					return value
+					return wantScope
+						? scope.pushScope(value)
+					 	: value
 				}
 			case AST.ThisExpression:
 				return function this_expr (scope) {
 					const c = useScope(scope)
-					if (contextOut) {
-						contextOut.context = c._parent
-					}
-					return c.getOwnVal()
+					return wantScope
+					  ? c
+						: c.valueOf()
 				}
 			case AST.NGValueParameter:
 				return function (scope, assign) {

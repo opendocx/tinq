@@ -290,9 +290,9 @@ function serializeAstNode (ast, subs = false, isElseIf = false) {
   }
 }
 
-const primitiveConstructors$1 = [String, Number, Boolean, Date];
+const primitiveConstructors = [String, Number, Boolean, Date, Function];
 
-function isPrimitive$1 (value, includeWrapped = true) {
+function isPrimitive (value, includeWrapped = true) {
   switch (typeof value) {
     case 'string':
     case 'number':
@@ -300,7 +300,7 @@ function isPrimitive$1 (value, includeWrapped = true) {
       return true
     case 'object':
       if (includeWrapped) {
-        if (value && value.constructor && primitiveConstructors$1.includes(value.constructor)) {
+        if (value && value.constructor && primitiveConstructors.includes(value.constructor)) {
           return true
         }
       } else if (value && (value instanceof Date)) {
@@ -373,7 +373,7 @@ function isDate (value) {
 
 function isTruthy (value) {
 	let bValue;
-	if (value && isIterable$1(value)) {
+	if (value && isIterable(value)) {
 		// checking if a list is empty or not
 		if (!YObject.isArray(value)) {
 			value = Array.from(value);
@@ -386,9 +386,9 @@ function isTruthy (value) {
 	return bValue
 }
 
-function isIterable$1 (obj) {
+function isIterable (obj) {
 	// checks for null and undefined; also strings (though iterable) should not be iterable *contexts*
-	if (obj == null || isPrimitive$1(obj)) {
+	if (obj == null || isPrimitive(obj)) {
 		return false
 	}
 	return typeof obj[Symbol.iterator] === 'function'
@@ -402,24 +402,6 @@ function dateFormat(value) {
 
 function lowercase (string) {
 	return isString(string) ? string.toLowerCase() : string
-}
-
-function getStringValue(name) {
-	// Property names must be strings. This means that non-string objects cannot be used
-	// as keys in an object. Any non-string object, including a number, is typecasted
-	// into a string via the toString method.
-	// -- MDN, https://developer.mozilla.org/en/docs/Web/JavaScript/Reference/Operators/Property_accessors#Property_names
-	//
-	// So, to ensure that we are checking the same `name` that JavaScript would use, we cast it
-	// to a string. It's not always possible. If `name` is an object and its `toString` method is
-	// 'broken' (doesn't return a string, isn't a function, etc.), an error will be thrown:
-	//
-	// TypeError: Cannot convert object to primitive value
-	//
-	// For performance reasons, we don't catch this error here and allow it to propagate up the call
-	// stack. Note that you'll get the same error in JavaScript if you try to access a property using
-	// such a 'broken' object as a key.
-	return name + "";
 }
 
 function ifDefined (v, d) {
@@ -1884,12 +1866,8 @@ class ExpressionParser {
 	}
 }
 
-function pushScope (scope) {
+function useScope (scope) {
 	return scope instanceof Scope$1 ? scope : new Scope$1(scope)
-}
-
-function isScope (obj) {
-  return obj instanceof Scope$1
 }
 
 let Scope$1 = class Scope {
@@ -1904,68 +1882,84 @@ let Scope$1 = class Scope {
     } else {
       this.typename = value.__typename; // just in case?
       if (vt === 'object') {
-        if (value.constructor && primitiveConstructors$1.includes(value.constructor)) {
+        if (value.constructor && primitiveConstructors.includes(value.constructor)) {
           vt = value.constructor.name.toLowerCase();
-          // if (['string', 'number', 'boolean'].includes(vt)) { // unwrap the primitive
-          //   Object.keys(value)
-          //     .filter(key => isNaN(+key))
-          //     .forEach(key => this[key] = value[key])
-          //   value = value.valueOf()
-          // }
-        } // else {
-        // 	Object.assign(this, value)
-        // }
+        } else if (Array.isArray(value)) {
+          vt = 'array';
+          this.length = value.length;
+          this.punc = value.punc;
+        }
       }
     }
     this.type = vt;
-    this.isPrimitive = (vt !== 'object');
+    this.isPrimitive = (vt !== 'object' && vt !== 'array');
     if (parentScope && !(parentScope instanceof Scope)) {
         throw new Error('parentScope is not an instance of scope!')
     }
     this._parent = parentScope || null;
   }
 
-  ps (value, index0, count, punc) {
-    if (isNaN(index0)) { // no index provided; intent is to push an object scope
-      if (value instanceof Scope) {
-        if (value._parent === this) {
-          return value // looks okay, it's a no-op
-        }
-        throw new Error('Cannot reuse conflicting Scope. What are you trying to do?')
+  pushScope (value) {
+    if (value instanceof Scope) {
+      if (value._parent === this) {
+        return value // looks okay, it's a no-op
       }
-      return new Scope(value, this)
-    } else { // index provided; intent is to push an iteration scope
-      if (value instanceof Scope) {
-        if (value._parent === this && value._index0 == index0) {
-          return value // looks okay I guess, let it go
-        }
-        throw new Error('Cannot reuse conflicting EnumerationScope. What are you tryig to do?')
+      throw new Error('Cannot reuse conflicting Scope. What are you trying to do?')
+    }
+    return new Scope(value, this)
+  }
+  
+  lookupBase (ident, baseTypeName) {
+    let base = this;
+    if (baseTypeName) { // use only type name to find correct scope
+      while (base && (base.typename !== baseTypeName)) base = base._parent;
+    } else { // when not specified, just look for presence of ident (fall-back to top of stack if not found)
+      while (base && !base.hasOwnValue(ident)) base = base._parent;
+      if (!base) base = this; // if we are searching purely on name (no types), fall back to "this" (local scope)
+    }
+    return base // may be undefined if baseTypeName was provided but not found (== bug in caller's code)
+  }
+
+  lookupScope (ident, baseTypeName) { // this gets called at compile-time to resolve an identifier INCL CONTEXT
+    const base = this.lookupBase(ident, baseTypeName);
+    return base
+      ? base.getOwnScope(ident)
+      : new Scope(null) // identifier not found; return null scope (?)
+  }
+
+  lookupValue (ident, baseTypeName) { // this gets called at compile-time to resolve an identifier WITHOUT CONTEXT
+    const base = this.lookupBase(ident, baseTypeName);
+    return base && base.getOwnValue(ident)
+  }
+
+  getOwnScope (ident) { // == old lookupScope + getOwnValue + pushScope
+    if (ident === undefined || ident === null || ident === '') throw new Error('Identifier required')
+    if (isNaN(ident)) { // normal use case -- ident is alphanumeric identifier
+      const result = ident === '_parent'
+        ? this._parent
+        : new Scope(this.getOwnValue(ident), this);
+      result.name = ident;
+      return result
+    } else { // ident is numeric
+      if (this.type !== 'array' && this.type !== 'null') {
+        throw new Error(`Requested numeric element of ${this.type} (non-array)`)
       }
-      return new EnumerationScope(this, value, +index0, count, punc)
+      return new EnumerationScope(this._parent, this.value && this.value[ident], +ident, this.length, this.punc)
     }
   }
 
-  lookupVal (ident, ns) {
-    if (ns) {
-      // look up scope chain until you find a frame of the expected typename, then look up ident on that frame (or return whole frame's value if no ident given)
-      const frame = this.lookupScope(null, ns);
-      return frame && frame.getOwnVal(ident)
+  forEachScope (enumScopeFunc) {
+    if (this.type !== 'array') {
+      throw new Error('forEachScope called on non-array')
     }
-    if (ident) {
-      // look up scope chain until you find one that "has" a member by the name of ident, and return that ident's value
-      const frame = this.lookupScope(ident);
-      return frame && frame.getOwnVal(ident)
+    let i = 0;
+    while (i < this.length) {
+      enumScopeFunc(this.getOwnScope(i));
+      i++;
     }
-    // else: return the whole value for this frame
-    return this.value
   }
 
-  setOwnVal (ident, value, ns) {
-    //throw new error('not implemented')
-    this.value[ident] = value;
-  }
-
-  hasOwnVal (ident) {
+  hasOwnValue (ident) {
     if (ident && ident.startsWith('_')) {
       if (ident in this) return true // _parent, _index0 etc. are on this, but _key, _values (for grouping) are on this.value
     }
@@ -1975,9 +1969,13 @@ let Scope$1 = class Scope {
     return Boolean(this.value[ident])
   }
 
-  getOwnVal (ident) {
+  getOwnValue (ident) {
     if (!ident) return this.value
-    if (ident.startsWith('_') && (ident in this)) return this[ident]
+    if (ident.startsWith('_') && (ident in this)) {
+      return ident === '_parent'
+        ? this._parent && this._parent.valueOf()
+        : this[ident]
+    }
     if (this.type === 'null') return undefined
     let result = this.value[ident];
     if (typeof result === 'function' && result.ast) {
@@ -1986,19 +1984,12 @@ let Scope$1 = class Scope {
     return result
   }
 
-  lookupScope (ident, ns) {
-    let result = this;
-    if (ns) { // only look at type name for lookup
-      while (result && (result.typename !== ns)) result = result._parent;
-      return result
-    }
-    if (ident) {
-      // when ns not specified, just look for presence of ident (fall-back to top of stack if not found)
-      while (result && !result.hasOwnVal(ident)) result = result._parent;
-      return result || this
-    }
-    // if no ident specified, just return this frame
-    return result
+  setOwnValue (ident, value, ns) {
+    this.value[ident] = value;
+  }
+
+  isNull () {
+    return this.value == null
   }
 
   [Symbol.toPrimitive] (hint) {
@@ -2186,10 +2177,10 @@ class ASTInterpreter {
 		return fn
 	}
 
-	recurse (ast, contextOut, create) {
+	recurse (ast, wantScope, create) {
 		if (!ast) return noop
 		const self = this;
-		let left, right, args, obj, expression;
+		let left, right, args, expression;
 		// if (ast.winput) {
 		// 	return this.inputs(ast.winput, ast.watchId)
 		// }
@@ -2220,17 +2211,15 @@ class ASTInterpreter {
 					return value
 				}
 			case AST.ListField:
-				obj = {};
-				expression = this.recurse(ast.expression, obj);
+				expression = this.recurse(ast.expression, true);
 				right = this.recurse(ast.content); // in essence a lambda
 				return function list_field (scope) {
-					const exprListValue = expression(scope);
-					if (exprListValue && exprListValue.length) {
-						const results = exprListValue.map(
-							(item, index) => right.call(undefined,
-								obj.context.ps(item, index, exprListValue.length, exprListValue.punc)
-							)
-						);
+					const exprListScope = expression(scope);
+					if (exprListScope && exprListScope.length) {
+						const results = [];
+						exprListScope.forEachScope(enumScope => {
+							results.push(right.call(undefined, enumScope));
+						});
 						return results.join('')
 					}
 					return ''
@@ -2289,104 +2278,56 @@ class ASTInterpreter {
 			case AST.Identifier:
 				if (self.stage === 'inputs') throw "error: this has been broken for inputs"
 				return function identifier_ (scope, assign, inputs) {
-					const c = pushScope(scope);
-					let base, value;
-					if (contextOut || (create && create !== 1)) {
-						base = c.lookupScope(ast.name, ast.ns);
-						if (create && create !== 1
-							&& base.getOwnVal(ast.name) == null
-						) {
-							base.setOwnVal(ast.name, {}, ast.ns);
+					const c = useScope(scope);
+					let value;
+					if (wantScope || (create && create !== 1)) {
+						value = c.lookupScope(ast.name, ast.ns);
+						if (create && create !== 1) {
+							if (value.isNull() && value._parent) {
+								value._parent.setOwnValue(ast.name, {}, ast.ns);
+								value = wantScope
+								  ? value._parent.getOwnScope(ast.name)
+									: value._parent.getOwnValue(ast.name);
+							}
 						}
-						value = base.getOwnVal(ast.name);
 					} else {
-						value = c.lookupVal(ast.name, ast.ns);
-					}
-					if (contextOut) {
-						contextOut.context = base;
-						contextOut.name = ast.name;
+						value = c.lookupValue(ast.name, ast.ns);
 					}
 					return value
 				}
 			case AST.MemberExpression:
-				obj = {}; // we need context info for the object
-				left = this.recurse(ast.object, obj, !!create);
+				left = this.recurse(ast.object, true, !!create);
 				if (ast.computed) {
 					right = this.recurse(ast.property);
 					return function member_computed (scope, assign, inputs) {
 						const lhs = left(scope, assign, inputs);
-						let value;
-						let rhs = right(scope, assign, inputs);
-						rhs = getStringValue(rhs);
-						if (contextOut) {
-							contextOut.context = obj.context;
-							contextOut.name = rhs;
-							contextOut.computed = true;
-						}
-						if (isScope(lhs)) {
-							value = lhs.getOwnVal(rhs);
-							if (create && create !== 1) {
-								if (!value) {
-									lhs.setOwnVal(rhs, {});
-									value = lhs.getOwnVal(rhs);
-								}
-							}
-							if (contextOut) {
-								contextOut.object = value;
-							}
-						} else { // should be primitive or array
-							if (lhs) {
-								value = lhs[rhs];
-								if (create && create !== 1) {
-									if (!value) {
-										value = lhs.value[rhs] = {};
-									}
-								}
-							}
-							if (contextOut) {
-								contextOut.object = isScope(lhs) ? lhs.getOwnVal() : lhs;
-								if (!isNaN(rhs)) { // numeric index into array; // avoid losing scope chain!
-									if (Array.isArray(lhs)) {
-										value = pushScope(obj.context).ps(value, rhs, lhs.length, lhs.punc);
-									} else {
-										value = pushScope(obj.context).ps(value, rhs, 0);
-									}
-								}
+						const rhs = right(scope, assign, inputs);
+						if (create && create !== 1) {
+							if (lhs.getOwnValue(rhs) == null) {
+								lhs.setOwnValue(rhs, {});
 							}
 						}
-						return value
+						return wantScope
+							? lhs.getOwnScope(rhs)
+							: lhs.getOwnValue(rhs)
 					}
 				} else { // !ast.computed
 					const propName = ast.property.name;
 					return function member_named (scope, assign, inputs) {
-						const lhs = left(scope, assign, inputs); // alert: lhs can be a Scope IF left is a computed member expression!
-						if (!obj.context) throw "what to do?" // maybe base = pushScope(lhs)??
-						// handle special case for _parent identifier, whose value is already a scope!
-						const base = obj.name === '_parent' ? lhs : obj.context.ps(lhs);
+						const lhs = left(scope, assign, inputs);
 						if (create && create !== 1) { // when create===1 that means we're called by an assignment so no need to create
-							if (base.getOwnVal(propName) == null) {
-								base.setOwnVal(propName, {});
+							if (lhs.getOwnValue(propName) == null) {
+								lhs.setOwnValue(propName, {});
 							}
 						}
-						const value = base.getOwnVal(propName);
-						if (contextOut) {
-							contextOut.object = isScope(lhs) ? lhs.getOwnVal() : lhs; // contextOut.object should not be a Scope
-							contextOut.context = base;
-							contextOut.computed = false;
-							contextOut.name = propName;
-						}
-						return value
+						return wantScope
+							? lhs.getOwnScope(propName)
+							: lhs.getOwnValue(propName)
 					}
 				}
 			case AST.CallExpression:
-				obj = {}; // callee contextual info
 				args = [];
-				right = this.recurse(ast.callee, obj); // 2nd arg=={} means we are requesting the result's context
-					// as well as its value. If the result is a function to be called, its context is the object ON WHICH
-					// that function should be called)... and Knackly uses this ALL THE TIME, whenever (e.g.)
-					// someone calls prototype methods on text strings, numbers, etc.
-					// This is so the function can ultimately be invoked with "this" referring to the right thing
-					// (see `rhs.value.apply(rhs.context, values)` below)
+				right = this.recurse(ast.callee, true);
 				ast.arguments.forEach(expr => {
 					args.push(self.recurse(expr));
 				});
@@ -2395,7 +2336,7 @@ class ASTInterpreter {
 					let value;
 					if (rhs != null) {
 						const argValues = args.map(arg => arg(scope, assign, inputs));
-						value = rhs.apply(obj.context.valueOf(), argValues);
+						value = rhs.valueOf().apply(rhs._parent.valueOf(), argValues);
 					}
 					return value
 				}
@@ -2405,25 +2346,16 @@ class ASTInterpreter {
 				// These functions expect the first argument to be the INPUT to the filter.
 				// ARGUMENTS to the filter (if any) are passed as SUBSEQUENT arguments to this function. 
 				args = []; // (for the filter function to be called)
-				obj = ast.lambda ? {} : undefined; // for list filters, we need the filter input's context!
-				args.push(self.recurse(ast.input, obj));
+				args.push(self.recurse(ast.input, ast.lambda)); // for list filters, we need the filter input's context!
 				ast.arguments.forEach(expr => {
 					args.push(self.recurse(expr));
 				});
 				return function filter_expr (scope, assign, inputs) {
-					const argValues = [];
-					args.forEach((arg, i) => {
-						const result = arg(scope, assign, inputs);
-						argValues.push(result);
-						if (i === 0 && obj) { // list filter functions get the parent context as the 2nd argument!
-							argValues.push(obj.context || pushScope(null)); // must have a context, even if null
-						}
-					});
+					const argValues = args.map(arg => arg(scope, assign, inputs));
 					const value = right.apply(undefined, argValues, inputs); // bug/question (inherited from angular-expressions): does 3rd argument to apply() actually DO anything?  (it's not documented anywhere I have found!)
-					if (contextOut) {
-						contextOut.context = pushScope(scope);
-					}
-					return value
+					return wantScope
+						? useScope(scope).pushScope(value)
+						: value
 				}
 			case AST.LambdaExpression:
 				right = self.recurse(ast.expression);
@@ -2435,17 +2367,16 @@ class ASTInterpreter {
 				}
 				return function sort_key () { return right }
 			case AST.AssignmentExpression:
-				obj = {};
-				left = this.recurse(ast.left, obj, 1); // 2nd arg=={} means we are requesting both the value (the
-				// ...value that is being re-assigned) AND its context (the object ON WHICH that value exists)
-				// This is so the value reassignment can happen on the correct object
-				// (see `lhs.context[lhs.name] = rhs` below)
+				left = this.recurse(ast.left, true, 1);
 				right = this.recurse(ast.right);
 				return function assign_expr (scope, assign, inputs) {
-					left(scope, assign, inputs); // need to call because this is what actually populates obj!
-					const rhs = right(scope, assign, inputs);
-					obj.context.setOwnVal(obj.name, rhs, ast.ns);
-					return obj.context.getOwnVal(obj.name) // should === rhs but just to be sure
+					const lhs = left(scope, assign, inputs); // need to call because this is what actually determines context!
+					if (lhs._parent && lhs.name) {
+						const rhs = right(scope, assign, inputs);
+						lhs._parent.setOwnValue(lhs.name, rhs, ast.ns);
+						// todo: shouldn't we be checking contextOut here and returning a scope if requested?
+						return lhs._parent.getOwnValue(lhs.name) // should === rhs but just to be sure
+					}
 				}
 			case AST.ArrayExpression:
 				args = [];
@@ -2453,7 +2384,10 @@ class ASTInterpreter {
 					args.push(self.recurse(expr));
 				});
 				return function array_expr (scope, assign, inputs) {
-					return args.map(arg => arg(scope, assign, inputs))
+					const value = args.map(arg => arg(scope, assign, inputs));
+					return wantScope
+					  ? useScope(scope).pushScope(value)
+						: value
 				}
 			case AST.ObjectExpression:
 				args = [];
@@ -2466,7 +2400,7 @@ class ASTInterpreter {
 						});
 					} else {
 						args.push({
-							key: property.key.type === AST.Identifier ? property.key.name : "" + property.key.value,
+							key: property.key.type === AST.Identifier ? property.key.name : property.key.value + '',
 							computed: false,
 							value: self.recurse(property.value),
 						});
@@ -2481,15 +2415,16 @@ class ASTInterpreter {
 							value[arg.key] = arg.value(scope, assign, inputs);
 						}
 					}
-					return value
+					return wantScope
+						? scope.pushScope(value)
+					 	: value
 				}
 			case AST.ThisExpression:
 				return function this_expr (scope) {
-					const c = pushScope(scope);
-					if (contextOut) {
-						contextOut.context = c._parent;
-					}
-					return c.getOwnVal()
+					const c = useScope(scope);
+					return wantScope
+					  ? c
+						: c.valueOf()
 				}
 			case AST.NGValueParameter:
 				return function (scope, assign) {
@@ -2523,7 +2458,7 @@ class ASTCompiler {
 			assign: { vars: [], body: [], own: {} },
 			inputs: []
 		};
-		let extra = "";
+		let extra = '';
 		if (ast) {
 			findConstantExpressions(ast, self.filters);
 			this.stage = "lambdas";
@@ -2542,9 +2477,7 @@ class ASTCompiler {
 					init = '[]';
 				}
 				const lid = self.nextId(false, init);
-				const cinfo = {};
-				self.recurse(rnode, lid, cinfo);
-				lnode._ckey = cinfo.context;
+				self.recurse(rnode, lid);
 				self.return_(lid);
 			}
 			// let assignable
@@ -2589,14 +2522,12 @@ class ASTCompiler {
 		append(fns, 'return fn');
 		// eslint-disable-next-line no-new-func
 		const fn = new Function(
-			"flt",
-			"gsv",
-			"ifd",
-			"pls",
-			"ps",
-			"iss",
+			'flt',
+			'ifd',
+			'pls',
+			'use',
 			fns.join('\n') // last argument to Function() is function body; each prior is an argument name
-		)(this.filters, getStringValue, ifDefined, plusFn, pushScope, isScope);
+		)(this.filters, ifDefined, plusFn, useScope);
 
 		this.state = this.stage = undefined;
 		fn.ast = ast;
@@ -2612,12 +2543,12 @@ class ASTCompiler {
 		const fns = this.state.inputs; // currently always empty because inputs stage & watch finding is commented out
 		const self = this;
 		fns.forEach(name => {
-			result.push(`var ${name}=${self.generateFunction(name, "s")}`);
+			result.push(`var ${name}=${self.generateFunction(name, 's')}`);
 		});
 		if (fns.length) {
-			result.push(`fn.inputs=[${fns.join(",")}];`);
+			result.push(`fn.inputs=[${fns.join(',')}];`);
 		}
-		return result.join("")
+		return result.join('')
 	}
 
 	generateFunction (name, params) {
@@ -2628,20 +2559,20 @@ class ASTCompiler {
 		const parts = [];
 		const self = this;
 		for (const [filter, id] of Object.entries(this.state.filters)) {
-			parts.push(id + "=flt(" + self.escape(filter) + ")");
+			parts.push(id + '=flt(' + self.escape(filter) + ')');
 		}
-		if (parts.length) return `var ${parts.join(",")};`
-		return ""
+		if (parts.length) return `var ${parts.join(',')};`
+		return ''
 	}
 
 	varsPrefix (section) {
 		return this.state[section].vars.length
-			? `var ${this.state[section].vars.join(",")};`
-			: ""
+			? `var ${this.state[section].vars.join(',')};`
+			: ''
 	}
 
 	funcBody (section) {
-		return this.state[section].body.join("")
+		return this.state[section].body.join('')
 	}
 
 	/**
@@ -2650,8 +2581,7 @@ class ASTCompiler {
 	 * @param {object} ast node
 	 * @param {string} intoId id of the variable (in the target code) in which the result of the current operation should
 	 *                        be stored
-	 * @param {object?} contextOut if the current operation needs to return contextual (scope) information, contextOut is
-	 *                             an object through which that contextual information can flow back up the call stack.
+	 * @param {object?} wantScope if the current operation needs to return a Scope object rather than a regular value
 	 * @param {*} returnFn for all expressions and sub-expressions that ultimately compile down to strings (containing
 	 *                        JavaScript), this callback (if specified) is invoked as the last thing after that
 	 *                        compilation is complete. Not currently called for template & field nodes.
@@ -2660,17 +2590,17 @@ class ASTCompiler {
 	 * @returns void. The recurse method alters the state of this ASTCompiler instance, such that after the call to
 	 * recurse returns, the generateFunction() method can be used to finish the code generation.
 	 */
-	recurse (ast, intoId, contextOut, returnFn, create, skipWatchIdCheck) {
+	recurse (ast, intoId, wantScope, returnFn, create, skipWatchIdCheck) {
 		if (!ast) return // any need to call returnFn() here before returning, or will it always already be noop?
 		const self = this;
-		let left, right, args, obj, expression;
+		let left, right, args, expression;
 		returnFn = returnFn || noop;
 		if (!skipWatchIdCheck && isDefined(ast.watchId)) {
 			intoId = intoId || this.nextId();
 			this.if_(
-				"i",
-				this.lazyAssignId(intoId, this.computedMember("i", ast.watchId)),
-				this.lazyRecurse(ast, intoId, contextOut, returnFn, create, true)
+				'i',
+				this.lazyAssignId(intoId, this.computedMember('i', ast.watchId)),
+				this.lazyRecurse(ast, intoId, wantScope, returnFn, create, true)
 			);
 			return
 		}
@@ -2679,7 +2609,7 @@ class ASTCompiler {
 			case AST.TemplateBlock:
 				intoId = intoId || this.nextId(false, '[]');
 				ast.body.forEach(elem => self.recurse(elem, undefined, undefined, result => {
-					this.current().body.push(intoId, ".push(", result, ");");
+					this.current().body.push(intoId, '.push(', result, ');');
 				}));
 				returnFn(this.assignId(intoId, intoId + '.join("")'));
 				break
@@ -2723,16 +2653,15 @@ class ASTCompiler {
 				break
 			case AST.ListField:
 				expression = self.nextId(); // the list value itself
-				obj = {}; // to receive the list value's context info
-				self.recurse(ast.expression, expression, obj); // get list value
+				self.recurse(ast.expression, expression, true); // get list value
 				right = self.assignId(self.nextId(), self.generateFunction(ast.content._lkey, "s")); // list content lambda
-				left = self.nextId(false, ""); // var to hold result of list
+				left = self.nextId(false, ''); // var to hold result of list concatenation
 				self.if_(
 					expression + '&&' + expression + '.length',
 					() => {
-						self.assignId(left, `${expression}.map(` +
-							`(e,i)=>${right}.call(undefined,ps(${obj.context}).ps(e,i,${expression}.length,${expression}.punc))` +
-						').join("")');
+						self.assignId(left, '[]');
+						self.forEachScope(expression, left, right);
+						self.assignId(left, left + '.join("")');
 					}
 				);
 				returnFn(left);
@@ -2785,103 +2714,59 @@ class ASTCompiler {
 			case AST.Identifier:
 				if (self.stage === 'inputs') throw "error: this has been broken for inputs"
 				intoId = intoId || self.nextId();
-				if (contextOut || (create && create !== 1)) {
-					left = self.assignId(self.nextId(), self.lookupScopeOf(ast.name, ast.ns));
+				if (wantScope || (create && create !== 1)) {
+					self.assignId(intoId, self.lookupScope(ast.name, ast.ns));
 					if (create && create !== 1) {
 						self.if_(
-							self.isNull(self.getOwnValue(left, ast.name)),
+							self.and(self.scopeIsNull(intoId), intoId + '._parent'),
 							() => {
-								self.setOwnValue(left, ast.name, '{}', ast.ns);
+								self.setOwnValue(intoId + '._parent', ast.name, '{}', ast.ns);
+								self.assignId(intoId,
+									wantScope
+										? self.getOwnScope(intoId + '._parent', ast.name)
+										: self.getOwnValue(intoId + '._parent', ast.name)
+								);
 							}
 						);
 					}
-					self.assignId(intoId, self.getOwnValue(left, ast.name));
 				} else {
 					self.assignId(intoId, self.lookupValue(ast.name, ast.ns));
-				}
-				if (contextOut) {
-					contextOut.context = left;
-					contextOut.name = ast.name;
 				}
 				returnFn(intoId);
 				break
 			case AST.MemberExpression:
-				left = this.nextId(); // object will be stored here
+				left = this.nextId(); // object scope will be stored here
 				intoId = intoId || this.nextId(); // whole member expression will be stored here
-				obj = {}; // we need context info for the object
-				self.recurse(ast.object, left, obj, () => {
+				self.recurse(ast.object, left, true, () => {
 					if (ast.computed) {
 						right = self.nextId();
-						self.if_(
-							self.notNull(left),
-							function () {
-								self.recurse(ast.property, right);
-								self.setStringValue(right);
-								if (contextOut) {
-									contextOut.context = obj.context;
-									contextOut.name = right;
-									contextOut.computed = true;
-								}
-								self.if_(
-									self.isScope(left),
-									function consequent () { // lhs is a scope; use scope accessors
-										self.assignId(intoId, self.getOwnValueDyn(left, right));
-										if (create && create !== 1) {
-											self.if_(
-												self.isNull(intoId),
-												() => {
-													self.setOwnValueDyn(left, right, '{}', ast.ns);
-													self.assignId(intoId, self.getOwnValueDyn(left, right));
-												},
-											);
-										}
-										if (contextOut) contextOut.object = intoId;
-									},
-									function alternate () { // lhs is a primitive or array; use native accessors
-										const member = self.computedMember(left, right); // `${left}[${right}]`
-										self.assignId(intoId, member);
-										if (create && create !== 1) {
-											self.if_(
-												self.not(intoId),
-												() => {
-													self.assignId(member, '{}');
-													self.assignId(intoId, member);
-												}
-											);
-										}
-										if (contextOut) {
-											contextOut.object = left;
-											self.if_(
-												self.isArray(left) + "&&" + self.isNumber(right), // numeric index into array
-												// avoid losing scope chain
-												self.lazyAssignId(intoId, `ps(${obj.context}).ps(${[intoId, right, left+'.length', left+'.punc'].join(',')})`)
-											);
-										}
-									}
-								);
-							}
-						);
-					} else { // !ast.computed
-						if (!obj.context) throw "what to do?"
-						const propName = ast.property.name;
-						const base = obj.name === '_parent' ? left : obj.context+'.ps(' + left + ')';
-						expression = self.assignId(self.nextId(), base);
-						//const member = self.nonComputedMember(left, propName) // `${left}.${propName}` (plus some other checks)
+						self.recurse(ast.property, right);
 						if (create && create !== 1) {
 							self.if_(
-								self.isNull(self.getOwnValue(expression, propName)),
+								self.isNull(self.getOwnValueDyn(left, right)),
 								() => {
-									self.setOwnValue(expression, propName, '{}');
-								}
+									self.setOwnValueDyn(left, right, '{}', ast.ns);
+								},
 							);
 						}
-						self.assignId(intoId, self.getOwnValue(expression, propName));
-						if (contextOut) {
-							contextOut.object = left; // native value of what's to the left of the .
-							contextOut.context = expression; // context object of what's to the left of the .
-							contextOut.computed = false;
-							contextOut.name = propName;
+						self.assignId(intoId, wantScope
+							? self.getOwnScopeDyn(left, right)
+							: self.getOwnValueDyn(left, right)
+						);
+					} else { // !ast.computed
+						const propName = ast.property.name;
+						if (create && create !== 1) {
+							self.if_(
+								self.isNull(self.getOwnValue(left, propName)),
+								() => {
+									self.setOwnValue(left, propName, '{}');
+								},
+							);
 						}
+						self.assignId(intoId, wantScope
+							? self.getOwnScope(left, propName)
+							: self.getOwnValue(left, propName)
+						);
 					}
 					returnFn(intoId);
 				}, !!create);
@@ -2889,9 +2774,8 @@ class ASTCompiler {
 			case AST.CallExpression:
 				intoId = intoId || this.nextId();
 				right = self.nextId(); // callee value -- the function to be called (ident for globals, member expr for methods)
-				obj = {}; // callee contextual info
 				args = [];
-				self.recurse(ast.callee, right, obj, function () {
+				self.recurse(ast.callee, right, true, function () {
 					self.if_(
 						self.notNull(right),
 						function () {
@@ -2905,19 +2789,8 @@ class ASTCompiler {
 									}
 								);
 							});
-							expression = right + '.call(' + obj.context + '.valueOf(),' + args.join(',') + ')';
-							// if (obj.object /*obj.name || obj.context*/) {
-							// 	// right == v1, which is wrong (function instead of value on which function is invoked)
-							// 	// obj.context == v4, which is wrong (scope instead of raw value)
-							// 	// need access to v2, which is the object on which we need to call v1, but not sure how we should be getting it!
-							// 	// we could re-extract it from v4 by calling getObjectVal on it??  (even though it's already stored in v2?)
-							// 	expression = right + '.call(' + obj.context + ',' + args.join(',') + ')'
-							// 	// expression =
-							// 	// 	self.member(right, obj.name, obj.computed) +
-							// 	// 	"(" + args.join(",") + ")"
-							// } else {
-							// 	expression = right + "(" + args.join(",") + ")"
-							// }
+							expression = right + '.valueOf().call(' + right + '._parent.valueOf(),'
+								+ args.join(',') + ')';
 							self.assignId(intoId, expression);
 						},
 						function () {
@@ -2928,19 +2801,14 @@ class ASTCompiler {
 				});
 				break
 			case AST.FilterExpression:
-				intoId = intoId || this.nextId();
-				right = self.filter(ast.filter.name);
-				args = [];
-				obj = ast.lambda ? {} : undefined;
-				left = self.nextId();
-				self.recurse(ast.input, left, obj);
+				intoId = intoId || this.nextId(); // holds the final result of the filter
+				right = self.filter(ast.filter.name); // holds the filter function (to call)
+				args = []; // strings (ids/source code) representing each argument to the filter function
+				left = self.nextId(); // to hold the evaluated input to the filter
+				self.recurse(ast.input, left, ast.lambda); // get the input
+				// add the INPUT to the filter function's argument list...
 				args.push(left);
-				if (ast.lambda) {
-					if (obj.context) // normal case, list value came from some parent context
-						args.push(obj.context);
-					else
-						args.push('ps(null)'); // if no parent context, we must construct an empty one
-				}
+				// add the rest of the filter's arguments to the filter function'd argument list
 				ast.arguments.forEach(expr => {
 					const argId = self.nextId();
 					if (expr.type === AST.LambdaExpression || expr.type === AST.SortKeyExpression) {
@@ -2955,10 +2823,10 @@ class ASTCompiler {
 				});
 				// call the filter function, passing in the arguments assembled above
 				expression = `${right}.call(undefined,${args.join(',')})`;
-				self.assignId(intoId, expression);
-				if (contextOut) {
-					contextOut.context = self.assignId(self.nextId(), 'ps(s)');
-				}
+				self.assignId(intoId, wantScope
+					? self.pushScope(expression)
+					: expression
+				);
 				returnFn(intoId);
 				break
 			case AST.LambdaExpression:
@@ -2966,12 +2834,17 @@ class ASTCompiler {
 				// currently no-op; already handled earlier in lambda pass
 				break
 			case AST.AssignmentExpression:
+				left = this.nextId();
 				right = this.nextId();
-				obj = {};
-				this.recurse(ast.left, undefined, obj, () => {
-					self.recurse(ast.right, right);
-					self.setOwnValue(obj.context, obj.name, right, ast.ns);
-					self.assignId(intoId, self.getOwnValue(obj.context, obj.name));
+				this.recurse(ast.left, left, true, () => {
+					self.if_(
+						self.and(left + '._parent', left + '.name'),
+						() => {
+							self.recurse(ast.right, right);
+							self.setOwnValueDyn(left + '._parent', left + '.name', right, ast.ns);
+							self.assignId(intoId, self.getOwnValueDyn(left + '._parent', left + '.name'));
+						}
+					);
 					returnFn(intoId || right);
 				}, 1);
 				break
@@ -2987,7 +2860,10 @@ class ASTCompiler {
 						}
 					);
 				});
-				expression = "[" + args.join(",") + "]";
+				expression = '[' + args.join(',') + ']';
+				if (wantScope) {
+					expression = this.pushScope(expression);
+				}
 				this.assignId(intoId, expression);
 				returnFn(intoId || expression);
 				break
@@ -3001,7 +2877,7 @@ class ASTCompiler {
 							left = self.nextId();
 							self.recurse(property.key, left);
 						} else {
-							left = property.key.type === AST.Identifier ? property.key.name : "" + property.key.value;
+							left = property.key.type === AST.Identifier ? property.key.name : property.key.value + '';
 						}
 						right = self.nextId();
 						self.recurse(property.value, right);
@@ -3015,24 +2891,27 @@ class ASTCompiler {
 							undefined,
 							function (expr) {
 								args.push(
-									self.escape(property.key.type === AST.Identifier ? property.key.name : "" + property.key.value )
+									self.escape(property.key.type === AST.Identifier ? property.key.name : property.key.value + '')
 									  + ":" + expr
 								);
 							}
 						);
 					});
 					expression = "{" + args.join(",") + "}";
+					if (wantScope) {
+						expression = this.pushScope(expression);
+					}
 					this.assignId(intoId, expression);
 				}
 				returnFn(intoId || expression);
 				break
 			case AST.ThisExpression:
 				this.useScope();
-				this.assignId(intoId, "c.getOwnVal()");
-				if (contextOut) {
-					contextOut.context = this.assignId(this.nextId(), "c._parent");
-				}
-				returnFn(intoId || "c.getOwnVal()");
+				expression = wantScope
+					? 'c'
+					: 'c.valueOf()';
+				this.assignId(intoId, expression);
+				returnFn(intoId || expression);
 				break
 			case AST.NGValueParameter:
 				this.assignId(intoId, "v");
@@ -3056,7 +2935,7 @@ class ASTCompiler {
 	useScope () {
 		const own = this.current().own;
 		if (!own.hasOwnProperty('_scope_')) {
-			this.current().vars.push('c=ps(s)');
+			this.current().vars.push('c=use(s)');
 			own['_scope_'] = 'c';
 		}
 	}
@@ -3080,52 +2959,64 @@ class ASTCompiler {
 		this.current().body.push(id, ".push(", value, ");");
 	}
 
-	lookupValue (name, ns) {
+	pushScope (expression) {
 		this.useScope();
-		return 'c.lookupVal("' + name + (ns ? '","' + ns : '') + '")'
+		return 'c.pushScope(' + expression + ')'
 	}
 
-	lookupScopeOf (name, ns) {
+	lookupScope (name, ns) {
 		this.useScope();
 		return 'c.lookupScope("' + name + (ns ? '","' + ns : '') + '")'
 	}
 
-	getOwnValue (scope, name) {
+	lookupValue (name, ns) {
 		this.useScope();
-		return scope + '.getOwnVal("' + name + '")'
+		return 'c.lookupValue("' + name + (ns ? '","' + ns : '') + '")'
 	}
 
-	getOwnValueDyn (scope, id) {
-		this.useScope();
-		return scope + '.getOwnVal(' + id + ')'
+	getOwnScope (scopeId, name) {
+		return this.getOwnScopeDyn(scopeId, '"' + name + '"')
 	}
 
-	hasOwnValue (scope, name) {
+	getOwnScopeDyn (scopeId, id) {
 		this.useScope();
-		return scope + '.hasOwnVal("' + name + '")'
+		return scopeId + '.getOwnScope(' + id + ')'
 	}
 
-	hasOwnValueDyn (scope, id) {
+	forEachScope (scopeId, accumulatorId, lambdaId) {
 		this.useScope();
-		return scope + '.hasOwnVal(' + id + ')'
+		const result = scopeId + '.forEachScope(es=>'
+			+ accumulatorId + '.push(' + lambdaId + '.call(undefined,es)))';
+		this.current().body.push(result, ';');
 	}
 
-	setOwnValue (scope, name, value, ns) {
+	hasOwnValue (scopeId, name) {
+		return this.hasOwnValueDyn(scopeId, '"' + name + '"')
+	}
+
+	hasOwnValueDyn (scopeId, id) {
+		this.useScope();
+		return scopeId + '.hasOwnValue(' + id + ')'
+	}
+
+	getOwnValue (scopeId, name) {
+		return this.getOwnValueDyn(scopeId, '"' + name + '"')
+	}
+
+	getOwnValueDyn (scopeId, id) {
+		this.useScope();
+		return scopeId + '.getOwnValue(' + id + ')'
+	}
+
+	setOwnValue (scopeId, name, value, ns) {
+		return this.setOwnValueDyn(scopeId, '"' + name + '"', value, ns)
+	}
+
+	setOwnValueDyn (scopeId, id, value, ns) {
 		this.useScope();
 		this.current().body.push( // whoever actually pushes a command onto body is responsible for the ';':
-			scope + '.setOwnVal("' + name + '",' + value + (ns ? ',"' + ns + '"' : '') + ');'
+			scopeId + '.setOwnValue(' + id + ',' + value + (ns ? ',"' + ns + '"' : '') + ');'
 		);
-	}
-
-	setOwnValueDyn (scope, id, value, ns) {
-		this.useScope();
-		this.current().body.push( // whoever actually pushes a command onto body is responsible for the ';':
-			scope + '.setOwnVal(' + id + ',' + value + (ns ? ',"' + ns + '"' : '') + ');'
-		);
-	}
-
-	isScope (id) {
-		return 'iss(' + id + ')'
 	}
 
 	isArray (id) {
@@ -3177,10 +3068,10 @@ class ASTCompiler {
 	// "lazy" functions are just conveniences to curry calls to recurse and setValue,
 	// used only in conjunction with _if() (which expects curried functions for its
 	// consequentFn and alternateFn parameters).
-	lazyRecurse (ast, intoId, contextOut, returnFn, create, skipWatchIdCheck) {
+	lazyRecurse (ast, intoId, wantScope, returnFn, create, skipWatchIdCheck) {
 		const self = this;
 		return function () {
-			self.recurse(ast, intoId, contextOut, returnFn, create, skipWatchIdCheck);
+			self.recurse(ast, intoId, wantScope, returnFn, create, skipWatchIdCheck);
 		}
 	}
 
@@ -3193,6 +3084,16 @@ class ASTCompiler {
 
 	not (expression) {
 		return "!(" + expression + ")"
+	}
+
+	and (left, right, needParens = false) {
+		return needParens
+		  ? `(${left})&&(${right})`
+		  : left + "&&" + right
+	}
+
+	scopeIsNull (scopeId) {
+		return scopeId + '.isNull()'
 	}
 
 	isNull (expression) {
@@ -3215,7 +3116,7 @@ class ASTCompiler {
 	nonComputedMember (left, right) {
 		const SAFE_IDENTIFIER = /^[$_a-zA-Z][$_a-zA-Z0-9]*$/;
 		const UNSAFE_CHARACTERS = /[^$_a-zA-Z0-9]/g;
-		let expr = "";
+		let expr = '';
 		if (SAFE_IDENTIFIER.test(right)) {
 			expr = left + "." + right;
 		} else {
@@ -3223,10 +3124,6 @@ class ASTCompiler {
 			expr = left + '["' + right + '"]';
 		}
 		return expr
-	}
-
-	setStringValue (item) {
-		this.assignId(item, "gsv(" + item + ")");
 	}
 
 	stringEscapeFn (c) {
@@ -3245,9 +3142,9 @@ class ASTCompiler {
 	}
 
 	nextId (skip, init) {
-		const id = "v" + this.state.nextId++;
+		const id = 'v' + this.state.nextId++;
 		if (!skip) {
-			this.current().vars.push(id + (init ? "=" + init : ""));
+			this.current().vars.push(id + (init ? '=' + init : ''));
 		}
 		return id
 	}
@@ -3331,38 +3228,6 @@ function * FindLambdas (ast) {
 			break
   }
 	return
-}
-
-function isIterable (obj) {
-  // checks for null and undefined; also strings (though iterable) should not be iterable *contexts*
-  if (obj == null || isPrimitive(obj)) {
-    return false
-  }
-  return isObjectIterable(obj)
-}
-
-function isObjectIterable (obj) {
-  return obj && (typeof obj[Symbol.iterator] === 'function')
-}
-
-const primitiveConstructors = [String, Number, Boolean, Date];
-
-function isPrimitive (value, includeWrapped = true) {
-  switch (typeof value) {
-    case 'string':
-    case 'number':
-    case 'boolean':
-      return true
-    case 'object':
-      if (includeWrapped) {
-        if (value && value.constructor && primitiveConstructors.includes(value.constructor)) {
-          return true
-        }
-      } else if (value && (value instanceof Date)) {
-        return true
-      }
-  }
-  return false
 }
 
 // define built-in filters
@@ -3579,10 +3444,14 @@ function keepsections (input) {
 
 // runtime implementation of list filters:
 
-function sort (array, parentScope) {
-  if (!Array.isArray(array) || !array.length || arguments.length < 2) return array
+function sort (arrayScope) {
+  if (arrayScope.type !== 'array') {
+    throw new Error('sort filter requires an array scope')
+  }
+  const array = arrayScope.valueOf();
+  if (!array.length || arguments.length < 2) return array
   const sortBy = [];
-  let i = 2;
+  let i = 1; // skip first (scope) argument; rest are sort keys
   while (i < arguments.length) {
     // TODO: what is argument at this point?
     const sortKeyLambda = arguments[i++];
@@ -3596,8 +3465,8 @@ function sort (array, parentScope) {
       depth = 0;
     }
     if (depth >= sortBy.length) { return 0 }
-    const valA = sortBy[depth].evaluator(a, a); // sort expressions must only refer to stuff in the current list item
-    const valB = sortBy[depth].evaluator(b, b);
+    const valA = sortBy[depth].evaluator(a); // sort expressions must only refer to stuff in the current list item
+    const valB = sortBy[depth].evaluator(b);
     if (valA < valB) { return sortBy[depth].descending ? 1 : -1 }
     if (valA > valB) { return sortBy[depth].descending ? -1 : 1 }
     return compare(a, b, depth + 1)
@@ -3607,84 +3476,96 @@ function sort (array, parentScope) {
 sort.listFilter = true;
 sort.keyFilter = true;
 
-function filter (array, parentScope, predicate) {
-  if (!array || !array.length) return array
-  return callArrayFunc(Array.prototype.filter, array, parentScope, predicate, 'filter')
+function filter (arrayScope, predicate) {
+  return callArrayFunc(Array.prototype.filter, arrayScope, predicate, 'filter')
 }
 filter.listFilter = true;
 
-function find (array, parentScope, predicate) {
-  if (!array || !array.length) return null
-  return callArrayFunc(Array.prototype.find, array, parentScope, predicate, 'find')
+function find (arrayScope, predicate) {
+  if (arrayScope.type === 'null' || !arrayScope.length) return null
+  return callArrayFunc(Array.prototype.find, arrayScope, predicate, 'find')
 }
 find.listFilter = true;
 
-function any (array, parentScope, predicate) {
-  if (!array || !array.length) return false
-  return callArrayFunc(Array.prototype.some, array, parentScope, predicate, 'any')
+function any (arrayScope, predicate) {
+  if (arrayScope.type === 'null' || !arrayScope.length) return false
+  return callArrayFunc(Array.prototype.some, arrayScope, predicate, 'any')
 }
 any.aliases = ['some'];
 any.ident = 'any'; // canonical name for normalization
 any.listFilter = true;
 any.rtlFilter = true;
 
-function every (array, parentScope, predicate) {
-  if (!array || !array.length) return true
-  return callArrayFunc(Array.prototype.every, array, parentScope, predicate, 'every')
+function every (arrayScope, predicate) {
+  if (arrayScope.type === 'null' || !arrayScope.length) return true
+  return callArrayFunc(Array.prototype.every, arrayScope, predicate, 'every')
 }
 every.aliases = ['all'];
 every.ident = 'every'; // canonical name for normalization
 every.listFilter = true;
 every.rtlFilter = true;
 
-function map (array, parentScope, mapLambda) {
-  return callArrayFunc(Array.prototype.map, array, parentScope, mapLambda, 'map')
+function map (arrayScope, mapLambda) {
+  return callArrayFunc(Array.prototype.map, arrayScope, mapLambda, 'map')
 }
 map.listFilter = true;
 
-function group (array, parentScope, groupLambda) {
-  if (!Array.isArray(array) || arguments.length < 2) {
-    return array
+function group (arrayScope, groupLambda) {
+  if (arrayScope.type === 'null') return arrayScope.valueOf()
+  if (arrayScope.type !== 'array') {
+    throw new Error('group filter requires an array scope')
   }
-  if (array.length === 0) return []
-  const grouped = array.reduce(
-    (result, item, index) => {
-      /* const key = lScope.evaluate(groupLambda).toString() */
-      let key = groupLambda(parentScope.ps(item, index, array.length));
-      key = key && key.valueOf(); // ensure wrapped primitives and dates are unwrapped too
-      let bucket = result.find(b => b._key === key);
-      if (!bucket) {
-        bucket = { _key: key, _values: [] };
-        result.push(bucket);
-      }
-      bucket._values.push(item);
-      return result
-    },
-    []
-  );
+  const array = arrayScope.valueOf();
+  // const parentScope = arrayScope._parent
+  let grouped;
+  if (array.length === 0) {
+    grouped = [];
+  } else {
+    grouped = array.reduce(
+      (result, item, index) => {
+        let key = groupLambda(arrayScope.getOwnScope(index));
+        key = key && key.valueOf(); // ensure wrapped primitives and dates are unwrapped too
+        let bucket = result.find(b => b._key === key);
+        if (!bucket) {
+          bucket = { _key: key, _values: [] };
+          result.push(bucket);
+        }
+        bucket._values.push(item);
+        return result
+      },
+      []
+    );
+  }
   return grouped
 }
 group.listFilter = true;
 
-function reduce (array, parentScope, reducerLambda, initValue = undefined) {
-  if (!Array.isArray(array) || arguments.length < 2) {
-    return array
+function reduce (arrayScope, reducerLambda, initValue = undefined) {
+  if (arrayScope.type === 'null') return arrayScope.valueOf()
+  if (arrayScope.type !== 'array') {
+    throw new Error('reduce filter requires an array scope')
   }
-  if (array.length === 0) return initValue
-  const input0 = array[0];
-  const yobj0 = input0 && input0.__yobj;
-  Scope.pushList(array, yobj0 && yobj0.getParentEffective());
-  const reduced = array.items.reduce(
-    (result, item, index) => {
-      if (index === 0 && initValue === undefined) {
-        return item
-      } // else
-      const reducerItemFrame = parentScope.ps(item, index, array.length);
-      reducerItemFrame._result = result;
-      return reducerLambda(reducerItemFrame)
-    },
-    initValue
-  );
+  const array = arrayScope.valueOf();
+  // const parentScope = arrayScope._parent
+  let reduced;
+  if (array.length === 0) {
+    reduced = initValue;
+  } else {
+    const input0 = array[0];
+    const yobj0 = input0 && input0.__yobj;
+    Scope.pushList(array, yobj0 && yobj0.getParentEffective());
+    reduced = array.items.reduce(
+      (result, item, index) => {
+        if (index === 0 && initValue === undefined) {
+          return item
+        } // else
+        const reducerItemFrame = arrayScope.getOwnScope(index);
+        reducerItemFrame._result = result;
+        return reducerLambda(reducerItemFrame)
+      },
+      initValue
+    );
+  }
   return reduced
 }
 reduce.listFilter = true;
@@ -3692,11 +3573,16 @@ reduce.listFilter = true;
 
 // helper functions
 
-function callArrayFunc (func, array, parentScope, predicateLambda, funcName) {
-  if (!array) return array
-  // if (array instanceof Scope) throw new Error('Unexpected scope as list filter input')
-  if (!Array.isArray(array) || arguments.length < 2) {
-    return array // maybe we should throw instead...
+// callArrayFunc accepts an "array scope" and returns a regular array
+function callArrayFunc (func, arrayScope, predicateLambda, funcName) {
+  if (arrayScope.type === 'null') return arrayScope.valueOf()
+  if (arrayScope.type !== 'array') {
+    throw new Error('list filters require an array scope')
+  }
+  const array = arrayScope.valueOf();
+  // const parentScope = arrayScope._parent
+  if (!predicateLambda) {
+    throw new Error('no predicate supplied to callArrayFunc')
   }
   if (typeof predicateLambda !== 'function') {
     let filter = 'a list';
@@ -3705,11 +3591,9 @@ function callArrayFunc (func, array, parentScope, predicateLambda, funcName) {
     }
     throw new Error(`Invalid argument passed to ${filter} filter: ${predicateLambda}`)
   }
-
   const result = func.call(array, (item, index) => (
-    predicateLambda(parentScope.ps(item, index, array.length))
+    predicateLambda(arrayScope.getOwnScope(index))
   ));
-  // const result = func.call(array, (item) => evaluator(item.scopeProxy))
   return result
 }
 
@@ -4234,7 +4118,7 @@ class DataExtractor {
 
   assembleData (ast, scope) {
     let evaluator = this.compile(ast);
-    evaluator(pushScope(scope));
+    evaluator(useScope(scope));
     return this.data
   }
 
@@ -4252,10 +4136,10 @@ class DataExtractor {
     return fn
   }
 
-  recurse (ast, contextOut) {
+  recurse (ast, wantScope) {
     if (!ast) return noop
     const self = this;
-    let key, expr, left, right, args, obj, expression;
+    let key, expr, left, right, args, expression;
     switch (ast.type) {
       case AST.Program:
       case AST.TemplateBlock:
@@ -4288,18 +4172,16 @@ class DataExtractor {
         }
       case AST.ListField:
         expr = AST.serialize(ast.expression);
-        obj = {};
-        expression = this.recurse(ast.expression, obj);
+        expression = this.recurse(ast.expression, true);
         right = this.recurse(ast.content); // in essence a lambda
         return function list_field (scope) {
-          const exprListValue = expression(scope);
+          const exprListScope = expression(scope);
           const listAtom = ast.key || expr;
           self._startList(listAtom);
-          if (exprListValue) {
+          if (exprListScope.type === 'array') {
             const itemAtom = ast.key ? ast.key + 'i' : expr + '_ITEM';
             const puncAtom = ast.key ? ast.key + 'p' : expr + '_PUNC';
-            exprListValue.forEach((item, index) => {
-              const itemScope = obj.context.ps(item, index, exprListValue.length, exprListValue.punc);
+            exprListScope.forEachScope(itemScope => {
               self._startListItem(itemAtom);
               right.call(undefined, itemScope);
               self._endListItem(puncAtom, itemScope._punc);
@@ -4361,81 +4243,34 @@ class DataExtractor {
       case AST.Identifier:
         if (self.stage === 'inputs') throw "error: this has been broken for inputs"
         return function identifier_ (scope, assign, inputs) {
-          const c = pushScope(scope);
-          let base, value;
-          if (contextOut) {
-            base = c.lookupScope(ast.name, ast.ns);
-            value = base.getOwnVal(ast.name);
-          } else {
-            value = c.lookupVal(ast.name, ast.ns);
-          }
-          if (contextOut) {
-            contextOut.context = base;
-            contextOut.name = ast.name;
-          }
-          return value
+          const c = useScope(scope);
+          return wantScope
+            ? c.lookupScope(ast.name, ast.ns)
+            : c.lookupValue(ast.name, ast.ns)
         }
       case AST.MemberExpression:
-        obj = {}; // we need context info for the object
-        left = this.recurse(ast.object, obj);
+        left = this.recurse(ast.object, true);
         if (ast.computed) {
           right = this.recurse(ast.property);
           return function member_computed (scope, assign, inputs) {
             const lhs = left(scope, assign, inputs);
-            let value;
-            let rhs = right(scope, assign, inputs);
-            rhs = getStringValue(rhs);
-            if (contextOut) {
-              contextOut.context = obj.context;
-              contextOut.name = rhs;
-              contextOut.computed = true;
-            }
-            if (isScope(lhs)) {
-              value = lhs.getOwnVal(rhs);
-              if (contextOut) {
-                contextOut.object = value;
-              }
-            } else { // should be primitive or array
-              value = lhs && lhs[rhs];
-              if (contextOut) {
-                contextOut.object = isScope(lhs) ? lhs.getOwnVal() : lhs;
-                if (!isNaN(rhs)) { // numeric index into array; avoid losing scope chain!
-                  if (Array.isArray(lhs)) {
-                    value = pushScope(obj.context).ps(value, rhs, lhs.length, lhs.punc);
-                  } else {
-                    value = pushScope(obj.context).ps(value, rhs, 0);
-                  }
-                }
-              }
-            }
-            return value
+            const rhs = right(scope, assign, inputs);
+            return wantScope
+              ? lhs.getOwnScope(rhs)
+              : lhs.getOwnValue(rhs)
           }
         } else { // !ast.computed
           const propName = ast.property.name;
           return function member_named (scope, assign, inputs) {
-            const lhs = left(scope, assign, inputs); // alert: lhs can be a Scope IF left is a computed member expression!
-            if (!obj.context) throw "what to do?" // maybe base = pushScope(lhs)??
-            // handle special case for _parent identifier, whose value is already a scope!
-            const base = obj.name === '_parent' ? lhs : obj.context.ps(lhs);
-            const value = base.getOwnVal(propName);
-            if (contextOut) {
-              contextOut.object = isScope(lhs) ? lhs.getOwnVal() : lhs; // contextOut.object should not be a Scope
-              contextOut.context = base;
-              contextOut.computed = false;
-              contextOut.name = propName;
-            }
-            return value
+            const lhs = left(scope, assign, inputs);
+            return wantScope
+              ? lhs.getOwnScope(propName)
+              : lhs.getOwnValue(propName)
           }
         }
       case AST.CallExpression:
-        obj = {}; // callee contextual info
         args = [];
-        right = this.recurse(ast.callee, obj); // 2nd arg=={} means we are requesting the result's context
-          // as well as its value. If the result is a function to be called, its context is the object ON WHICH
-          // that function should be called)... and Knackly uses this ALL THE TIME, whenever (e.g.)
-          // someone calls prototype methods on text strings, numbers, etc.
-          // This is so the function can ultimately be invoked with "this" referring to the right thing
-          // (see `rhs.value.apply(rhs.context, values)` below)
+        right = this.recurse(ast.callee, true);
         ast.arguments.forEach(expr => {
           args.push(self.recurse(expr));
         });
@@ -4444,7 +4279,7 @@ class DataExtractor {
           let value;
           if (rhs != null) {
             const argValues = args.map(arg => arg(scope, assign, inputs));
-            value = rhs.apply(obj.context.valueOf(), argValues);
+            value = rhs.valueOf().apply(rhs._parent.valueOf(), argValues);
           }
           return value
         }
@@ -4454,25 +4289,16 @@ class DataExtractor {
         // These functions expect the first argument to be the INPUT to the filter.
         // ARGUMENTS to the filter (if any) are passed as SUBSEQUENT arguments to this function. 
         args = []; // (for the filter function to be called)
-        obj = ast.lambda ? {} : undefined; // for list filters, we need the filter input's context!
-        args.push(self.recurse(ast.input, obj));
+        args.push(self.recurse(ast.input, ast.lambda));
         ast.arguments.forEach(expr => {
           args.push(self.recurse(expr));
         });
         return function filter_expr (scope, assign, inputs) {
-          const argValues = [];
-          args.forEach((arg, i) => {
-            const result = arg(scope, assign, inputs);
-            argValues.push(result);
-            if (i === 0 && obj) { // list filter functions get the parent context as the 2nd argument!
-              argValues.push(obj.context || pushScope(null)); // must have a context, even if null
-            }
-          });
+          const argValues = args.map(arg => arg(scope, assign, inputs));
           const value = right.apply(undefined, argValues, inputs); // bug/question (inherited from angular-expressions): does 3rd argument to apply() actually DO anything?  (it's not documented anywhere I have found!)
-          if (contextOut) {
-            contextOut.context = pushScope(scope);
-          }
-          return value
+					return wantScope
+						? useScope(scope).pushScope(value)
+						: value
         }
       case AST.LambdaExpression:
         right = self.recurse(ast.expression);
@@ -4489,7 +4315,10 @@ class DataExtractor {
           args.push(self.recurse(expr));
         });
         return function array_expr (scope, assign, inputs) {
-          return args.map(arg => arg(scope, assign, inputs))
+					const value = args.map(arg => arg(scope, assign, inputs));
+					return wantScope
+					  ? useScope(scope).pushScope(value)
+						: value
         }
       case AST.ObjectExpression:
         args = [];
@@ -4502,7 +4331,7 @@ class DataExtractor {
             });
           } else {
             args.push({
-              key: property.key.type === AST.Identifier ? property.key.name : "" + property.key.value,
+              key: property.key.type === AST.Identifier ? property.key.name : property.key.value + '',
               computed: false,
               value: self.recurse(property.value),
             });
@@ -4517,15 +4346,16 @@ class DataExtractor {
               value[arg.key] = arg.value(scope, assign, inputs);
             }
           }
-          return value
+					return wantScope
+						? scope.pushScope(value)
+					 	: value
         }
       case AST.ThisExpression:
         return function this_expr (scope) {
-          const c = pushScope(scope);
-          if (contextOut) {
-            contextOut.context = c._parent;
-          }
-          return c.getOwnVal()
+          const c = useScope(scope);
+					return wantScope
+					  ? c
+						: c.valueOf()
         }
     }
   }

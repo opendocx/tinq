@@ -161,7 +161,7 @@ describe('Generating XML data for DOCX templates', function () {
     assert.strictEqual(str, expectedXml)
     //fs.writeFileSync(templatePath + '.asmdata1.xml', str)
     // now evaluate again with data in locals, and something else in scope, and make sure it still works
-    let otherData = useScope(data).ps({ global: 'stuff' })
+    let otherData = useScope(data).pushScope({ global: 'stuff' })
     extractedData = tinq.extractData(logic, otherData)
     str = extractedData.toXml('_odx')
     assert.strictEqual(str, expectedXml)

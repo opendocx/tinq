@@ -22,68 +22,82 @@ export class Scope {
       if (vt === 'object') {
         if (value.constructor && primitiveConstructors.includes(value.constructor)) {
           vt = value.constructor.name.toLowerCase()
-          // if (['string', 'number', 'boolean'].includes(vt)) { // unwrap the primitive
-          //   Object.keys(value)
-          //     .filter(key => isNaN(+key))
-          //     .forEach(key => this[key] = value[key])
-          //   value = value.valueOf()
-          // }
-        } // else {
-        // 	Object.assign(this, value)
-        // }
+        } else if (Array.isArray(value)) {
+          vt = 'array'
+          this.length = value.length
+          this.punc = value.punc
+        }
       }
     }
     this.type = vt
-    this.isPrimitive = (vt !== 'object')
+    this.isPrimitive = (vt !== 'object' && vt !== 'array')
     if (parentScope && !(parentScope instanceof Scope)) {
         throw new Error('parentScope is not an instance of scope!')
     }
     this._parent = parentScope || null
   }
 
-  ps (value, index0, count, punc) {
-    if (isNaN(index0)) { // no index provided; intent is to push an object scope
-      if (value instanceof Scope) {
-        if (value._parent === this) {
-          return value // looks okay, it's a no-op
-        }
-        throw new Error('Cannot reuse conflicting Scope. What are you trying to do?')
+  pushScope (value) {
+    if (value instanceof Scope) {
+      if (value._parent === this) {
+        return value // looks okay, it's a no-op
       }
-      return new Scope(value, this)
-    } else { // index provided; intent is to push an iteration scope
-      if (value instanceof Scope) {
-        if (value._parent === this && value._index0 == index0) {
-          return value // looks okay I guess, let it go
-        }
-        throw new Error('Cannot reuse conflicting EnumerationScope. What are you tryig to do?')
+      throw new Error('Cannot reuse conflicting Scope. What are you trying to do?')
+    }
+    return new Scope(value, this)
+  }
+  
+  lookupBase (ident, baseTypeName) {
+    let base = this
+    if (baseTypeName) { // use only type name to find correct scope
+      while (base && (base.typename !== baseTypeName)) base = base._parent
+    } else { // when not specified, just look for presence of ident (fall-back to top of stack if not found)
+      while (base && !base.hasOwnValue(ident)) base = base._parent
+      if (!base) base = this // if we are searching purely on name (no types), fall back to "this" (local scope)
+    }
+    return base // may be undefined if baseTypeName was provided but not found (== bug in caller's code)
+  }
+
+  lookupScope (ident, baseTypeName) { // this gets called at compile-time to resolve an identifier INCL CONTEXT
+    const base = this.lookupBase(ident, baseTypeName)
+    return base
+      ? base.getOwnScope(ident)
+      : new Scope(null) // identifier not found; return null scope (?)
+  }
+
+  lookupValue (ident, baseTypeName) { // this gets called at compile-time to resolve an identifier WITHOUT CONTEXT
+    const base = this.lookupBase(ident, baseTypeName)
+    return base && base.getOwnValue(ident)
+  }
+
+  getOwnScope (ident) { // == old lookupScope + getOwnValue + pushScope
+    if (ident === undefined || ident === null || ident === '') throw new Error('Identifier required')
+    if (isNaN(ident)) { // normal use case -- ident is alphanumeric identifier
+      const result = ident === '_parent'
+        ? this._parent
+        : new Scope(this.getOwnValue(ident), this)
+      result.name = ident
+      return result
+    } else { // ident is numeric
+      if (this.type !== 'array' && this.type !== 'null') {
+        throw new Error(`Requested numeric element of ${this.type} (non-array)`)
       }
-      return new EnumerationScope(this, value, +index0, count, punc)
+      return new EnumerationScope(this._parent, this.value && this.value[ident], +ident, this.length, this.punc)
     }
   }
 
-  lookupVal (ident, ns) {
-    const scope = ns
-      ? this.lookupScope(null, ns) // look up scope chain until you find a frame of the expected typename
-      : this.lookupScope(ident) // look up scope chain until you find one that "has" a member by the name of ident
-    return scope && scope.getOwnVal(ident) // then return ident's value on that frame
-  }
-
-  lookupScope (ident, ns) {
-    let scope = this
-    if (ns) { // use only type name to find correct scope
-      while (scope && (scope.typename !== ns)) scope = scope._parent
-      return scope // will be undefined if a frame of type ns is not found in chain! (== bug in caller's code)
+  forEachScope (enumScopeFunc) {
+    if (this.type !== 'array') {
+      throw new Error('forEachScope called on non-array')
     }
-    // when ns not specified, just look for presence of ident (fall-back to top of stack if not found)
-    while (scope && !scope.hasOwnVal(ident)) scope = scope._parent
-    return scope || this
+    let i = 0
+    while (i < this.length) {
+      enumScopeFunc(this.getOwnScope(i))
+      i++
+    }
   }
 
-  getOwnScope (ident) {
-    
-  }
-
-  hasOwnVal (ident) {
+  hasOwnValue (ident) {
     if (ident && ident.startsWith('_')) {
       if (ident in this) return true // _parent, _index0 etc. are on this, but _key, _values (for grouping) are on this.value
     }
@@ -93,9 +107,13 @@ export class Scope {
     return Boolean(this.value[ident])
   }
 
-  getOwnVal (ident) {
+  getOwnValue (ident) {
     if (!ident) return this.value
-    if (ident.startsWith('_') && (ident in this)) return this[ident]
+    if (ident.startsWith('_') && (ident in this)) {
+      return ident === '_parent'
+        ? this._parent && this._parent.valueOf()
+        : this[ident]
+    }
     if (this.type === 'null') return undefined
     let result = this.value[ident]
     if (typeof result === 'function' && result.ast) {
@@ -104,8 +122,12 @@ export class Scope {
     return result
   }
 
-  setOwnVal (ident, value, ns) {
+  setOwnValue (ident, value, ns) {
     this.value[ident] = value
+  }
+
+  isNull () {
+    return this.value == null
   }
 
   [Symbol.toPrimitive] (hint) {
