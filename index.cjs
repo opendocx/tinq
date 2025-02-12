@@ -2441,16 +2441,16 @@ class ASTInterpreter {
 	// }
 }
 
+const stringEscapeRegex = /[^ a-zA-Z0-9]/g;
+const USE = "use";
+const STRICT = "strict";
+
 class ASTCompiler {
   constructor (filters) {
     this.filters = filters;
-    this.USE = "use";
-    this.STRICT = "strict";
-    this.stringEscapeRegex = /[^ a-zA-Z0-9]/g;
   }
 
 	compile (ast) {
-		const self = this;
 		this.state = {
 			nextId: 0,
 			filters: {},
@@ -2460,14 +2460,14 @@ class ASTCompiler {
 		};
 		let extra = '';
 		if (ast) {
-			findConstantExpressions(ast, self.filters);
+			findConstantExpressions(ast, this.filters);
 			this.stage = "lambdas";
 			let index = 0;
 			for (const lnode of FindLambdas(ast)) {
 				const lkey = 'lambda' + ++index;
 				lnode._lkey = lkey;
-				self.state[lkey] = { vars: [], body: [], own: {} };
-				self.state.computing = lkey;
+				this.state[lkey] = { vars: [], body: [], own: {} };
+				this.state.computing = lkey;
 				// pre-processing for each lambda
 				let rnode, init;
 				if (lnode.type === AST.SortKeyExpression) rnode = lnode.key;
@@ -2476,9 +2476,9 @@ class ASTCompiler {
 					rnode = lnode;
 					init = '[]';
 				}
-				const lid = self.nextId(false, init);
-				self.recurse(rnode, lid);
-				self.return_(lid);
+				const lid = this.nextId(false, init);
+				this.recurse(rnode, lid);
+				this.return_(lid);
 			}
 			// let assignable
 			// this.stage = "assign"
@@ -2514,7 +2514,7 @@ class ASTCompiler {
 		// The build and minification steps remove the string "use strict" from the code, but this is done using a regex.
 		// This is a workaround for this until we do a better job at only removing the prefix only when we should.
 		const fns = [];
-		append(fns, `"${this.USE} ${this.STRICT}"`);
+		append(fns, `"${USE} ${STRICT}"`);
 		append(fns, this.filterPrefix());
 		append(fns, `var fn=${this.generateFunction("fn", "s,a,i")}`);
 		append(fns, extra);
@@ -2557,9 +2557,8 @@ class ASTCompiler {
 
 	filterPrefix () {
 		const parts = [];
-		const self = this;
 		for (const [filter, id] of Object.entries(this.state.filters)) {
-			parts.push(id + '=flt(' + self.escape(filter) + ')');
+			parts.push(id + '=flt(' + escape(filter) + ')');
 		}
 		if (parts.length) return `var ${parts.join(',')};`
 		return ''
@@ -2590,16 +2589,16 @@ class ASTCompiler {
 	 * @returns void. The recurse method alters the state of this ASTCompiler instance, such that after the call to
 	 * recurse returns, the generateFunction() method can be used to finish the code generation.
 	 */
-	recurse (ast, intoId, wantScope, returnFn, create, skipWatchIdCheck) {
+	recurse (ast, intoId, wantScope, returnFn, ckPrefix, create, skipWatchIdCheck) {
 		if (!ast) return // any need to call returnFn() here before returning, or will it always already be noop?
 		const self = this;
-		let left, right, args, expression;
+		let left, right, args, expression, key;
 		returnFn = returnFn || noop;
 		if (!skipWatchIdCheck && isDefined(ast.watchId)) {
 			intoId = intoId || this.nextId();
 			this.if_(
 				'i',
-				this.lazyAssignId(intoId, this.computedMember('i', ast.watchId)),
+				this.lazyAssignId(intoId, computedMember('i', ast.watchId)),
 				this.lazyRecurse(ast, intoId, wantScope, returnFn, create, true)
 			);
 			return
@@ -2609,12 +2608,12 @@ class ASTCompiler {
 			case AST.TemplateBlock:
 				intoId = intoId || this.nextId(false, '[]');
 				ast.body.forEach(elem => self.recurse(elem, undefined, undefined, result => {
-					this.current().body.push(intoId, '.push(', result, ');');
+					self.pushElement(intoId, result);
 				}));
 				returnFn(this.assignId(intoId, intoId + '.join("")'));
 				break
 			case AST.TemplateElement:
-				returnFn(this.escape(ast.text));
+				returnFn(escape(ast.text));
 				break
 			case AST.ContentField:
 				self.recurse(ast.expression, undefined, undefined, result => {
@@ -2625,7 +2624,7 @@ class ASTCompiler {
 				break
 			case AST.ConditionalField:
 				intoId = intoId || this.nextId();
-				self.recurse(ast.test, intoId);
+				self.recurse(ast.test, intoId, undefined, undefined, 'bool');
 				self.if_(
 					intoId,
 					() => { // consequent can be either a block node or a single
@@ -2652,11 +2651,11 @@ class ASTCompiler {
 				returnFn(intoId);
 				break
 			case AST.ListField:
-				expression = self.nextId(); // the list value itself
-				self.recurse(ast.expression, expression, true); // get list value
-				right = self.assignId(self.nextId(), self.generateFunction(ast.content._lkey, "s")); // list content lambda
-				left = self.nextId(false, ''); // var to hold result of list concatenation
-				self.if_(
+				expression = this.nextId(); // the list value itself
+				this.recurse(ast.expression, expression, true); // get list value
+				right = this.assignId(this.nextId(), this.generateFunction(ast.content._lkey, 's')); // list content lambda
+				left = this.nextId(false, ''); // var to hold result of list concatenation
+				this.if_(
 					expression + '&&' + expression + '.length',
 					() => {
 						self.assignId(left, '[]');
@@ -2667,7 +2666,7 @@ class ASTCompiler {
 				returnFn(left);
 				break
 			case AST.Literal:
-				expression = this.escape(ast.value);
+				expression = escape(ast.value);
 				this.assignId(intoId, expression);
 				returnFn(intoId || expression);
 				break
@@ -2675,101 +2674,132 @@ class ASTCompiler {
 				this.recurse(ast.argument, undefined, undefined, expr => {
 					right = expr;
 				});
-				expression = ast.operator + "(" + this.ifDefined(right, 0) + ")"; // TODO: I don't think these parens are necessary, are they?
+				expression = ast.operator + '(' + if_Defined(right, 0) + ')'; // TODO: use precedence to determine whether parens are needed
 				this.assignId(intoId, expression);
 				returnFn(expression);
 				break
 			case AST.BinaryExpression:
 				this.recurse(ast.left, undefined, undefined, expr => left = expr);
 				this.recurse(ast.right, undefined, undefined, expr => right = expr);
-				if (ast.operator === "+") {
-					expression = this.plus(left, right);
-				} else if (ast.operator === "-") {
-					expression = this.ifDefined(left, 0) + ast.operator + this.ifDefined(right, 0);
+				if (ast.operator === '+') {
+					expression = plus_(left, right);
+				} else if (ast.operator === '-') {
+					expression = if_Defined(left, 0) + ast.operator + if_Defined(right, 0);
 				} else {
-					expression = "(" + left + ")" + ast.operator + "(" + right + ")"; // todo: use OOP to determine when parens are needed
+					expression = '(' + left + ')' + ast.operator + '(' + right + ')'; // todo: use precedence to determine when parens are needed
 				}
 				this.assignId(intoId, expression);
 				returnFn(expression);
 				break
 			case AST.LogicalExpression:
 				intoId = intoId || this.nextId();
-				self.recurse(ast.left, intoId);
-				self.if_(
-					ast.operator === "&&" ? intoId : self.not(intoId),
-					self.lazyRecurse(ast.right, intoId)
+				this.recurse(ast.left, intoId);
+				this.if_(
+					ast.operator === '&&' ? intoId : not_(intoId),
+					this.lazyRecurse(ast.right, intoId)
 				);
 				returnFn(intoId);
 				break
 			case AST.ConditionalExpression:
 				intoId = intoId || this.nextId();
-				self.recurse(ast.test, intoId);
-				self.if_(
+				this.recurse(ast.test, intoId);
+				this.if_(
 					intoId,
-					self.lazyRecurse(ast.consequent, intoId),
-					self.lazyRecurse(ast.alternate, intoId),
+					this.lazyRecurse(ast.consequent, intoId),
+					this.lazyRecurse(ast.alternate, intoId),
 				);
 				returnFn(intoId);
 				break
 			case AST.Identifier:
-				if (self.stage === 'inputs') throw "error: this has been broken for inputs"
-				intoId = intoId || self.nextId();
-				if (wantScope || (create && create !== 1)) {
-					self.assignId(intoId, self.lookupScope(ast.name, ast.ns));
-					if (create && create !== 1) {
-						self.if_(
-							self.and(self.scopeIsNull(intoId), intoId + '._parent'),
-							() => {
-								self.setOwnValue(intoId + '._parent', ast.name, '{}', ast.ns);
-								self.assignId(intoId,
-									wantScope
-										? self.getOwnScope(intoId + '._parent', ast.name)
-										: self.getOwnValue(intoId + '._parent', ast.name)
-								);
-							}
-						);
+				if (this.stage === 'inputs') throw 'error: this has been broken for inputs'
+				// get cache key for identifier (incl. whether wantScope is true/false), see if there's an existing id for it, and only create a new one if not
+				key = getCacheKey(ast, wantScope, ckPrefix);
+				if (this.getCacheId(key)) {
+					if (intoId) {
+						this.assignId(intoId, this.getCacheId(key));
+					} else {
+						intoId = this.getCacheId(key);
 					}
 				} else {
-					self.assignId(intoId, self.lookupValue(ast.name, ast.ns));
+					intoId = intoId || this.nextId();
+					if (wantScope || (create && create !== 1)) {
+						this.assignId(intoId, this.lookupScope(ast.name, ast.ns));
+						if (create && create !== 1) {
+							this.if_(
+								and_(scopeIsNull(intoId), getParentScope(intoId)),
+								() => {
+									self.setOwnValue(getParentScope(intoId), ast.name, '{}', ast.ns);
+									self.assignId(intoId,
+										wantScope
+											? getOwnScope(getParentScope(intoId), ast.name)
+											: getOwnValue(getParentScope(intoId), ast.name)
+									);
+								}
+							);
+						}
+					} else {
+						this.assignId(intoId, self.lookupValue(ast.name, ast.ns));
+					}
+					this.setCacheId(key, intoId);
 				}
 				returnFn(intoId);
 				break
 			case AST.MemberExpression:
-				left = this.nextId(); // object scope will be stored here
-				intoId = intoId || this.nextId(); // whole member expression will be stored here
-				self.recurse(ast.object, left, true, () => {
-					if (ast.computed) {
-						right = self.nextId();
-						self.recurse(ast.property, right);
-						if (create && create !== 1) {
-							self.if_(
-								self.isNull(self.getOwnValueDyn(left, right)),
-								() => {
-									self.setOwnValueDyn(left, right, '{}', ast.ns);
-								},
-							);
-						}
-						self.assignId(intoId, wantScope
-							? self.getOwnScopeDyn(left, right)
-							: self.getOwnValueDyn(left, right)
-						);
-					} else { // !ast.computed
-						const propName = ast.property.name;
-						if (create && create !== 1) {
-							self.if_(
-								self.isNull(self.getOwnValue(left, propName)),
-								() => {
-									self.setOwnValue(left, propName, '{}');
-								},
-							);
-						}
-						self.assignId(intoId, wantScope
-							? self.getOwnScope(left, propName)
-							: self.getOwnValue(left, propName)
-						);
+				// get cache key for entire member expression (incl. whether wantScope is true/false), see if there's an existing id for it, and only create a new one if not
+				key = getCacheKey(ast, wantScope, ckPrefix);
+				if (this.getCacheId(key)) {
+					if (intoId) {
+						this.assignId(intoId, this.getCacheId(key));
+					} else {
+						intoId = this.getCacheId(key);
 					}
-					returnFn(intoId);
-				}, !!create);
+				} else {
+					intoId = intoId || this.nextId(); // whole member expression will be stored here
+					// once the object (left) side is handled (see below), this will handle the property (right) side:
+					const memberContinuation = () => {
+						if (ast.computed) {
+							right = self.nextId();
+							self.recurse(ast.property, right);
+							if (create && create !== 1) {
+								self.if_(
+									isNull(getOwnValueDyn(left, right)),
+									() => {
+										self.setOwnValueDyn(left, right, '{}', ast.ns);
+									},
+								);
+							}
+							self.assignId(intoId, wantScope
+								? getOwnScopeDyn(left, right)
+								: getOwnValueDyn(left, right)
+							);
+						} else { // !ast.computed
+							const propName = ast.property.name;
+							if (create && create !== 1) {
+								self.if_(
+									isNull(getOwnValue(left, propName)),
+									() => {
+										self.setOwnValue(left, propName, '{}');
+									},
+								);
+							}
+							self.assignId(intoId, wantScope
+								? getOwnScope(left, propName)
+								: getOwnValue(left, propName)
+							);
+						}
+						self.setCacheId(key, intoId);
+						returnFn(intoId);
+					};
+					// handle left side, THEN invoke right side handler
+					left = getCacheKey(ast.object, true);
+					if (this.getCacheId(left)) {
+						left = this.getCacheId(left);
+						memberContinuation();
+					} else {
+						left = this.nextId(); // object scope will be stored here
+						this.recurse(ast.object, left, true, memberContinuation, undefined, !!create);
+					}
+				}
 				break
 			case AST.CallExpression:
 				intoId = intoId || this.nextId();
@@ -2777,7 +2807,7 @@ class ASTCompiler {
 				args = [];
 				self.recurse(ast.callee, right, true, function () {
 					self.if_(
-						self.notNull(right),
+						notNull(right),
 						function () {
 							ast.arguments.forEach(expr => {
 								self.recurse(
@@ -2789,7 +2819,7 @@ class ASTCompiler {
 									}
 								);
 							});
-							expression = right + '.valueOf().call(' + right + '._parent.valueOf(),'
+							expression = right + '.valueOf().call(' + getParentScope(right) + '.valueOf(),'
 								+ args.join(',') + ')';
 							self.assignId(intoId, expression);
 						},
@@ -2812,7 +2842,7 @@ class ASTCompiler {
 				ast.arguments.forEach(expr => {
 					const argId = self.nextId();
 					if (expr.type === AST.LambdaExpression || expr.type === AST.SortKeyExpression) {
-						self.assignId(argId, self.generateFunction(expr._lkey, "s"));
+						self.assignId(argId, self.generateFunction(expr._lkey, 's'));
 						if (expr.type === AST.SortKeyExpression && expr.descending) {
 							self.assignId(argId + '.descending', 'true'); // sets a "descending" property on the sort key lambda function
 						}
@@ -2838,15 +2868,15 @@ class ASTCompiler {
 				right = this.nextId();
 				this.recurse(ast.left, left, true, () => {
 					self.if_(
-						self.and(left + '._parent', left + '.name'),
+						and_(getParentScope(left), left + '.name'),
 						() => {
 							self.recurse(ast.right, right);
-							self.setOwnValueDyn(left + '._parent', left + '.name', right, ast.ns);
-							self.assignId(intoId, self.getOwnValueDyn(left + '._parent', left + '.name'));
+							self.setOwnValueDyn(getParentScope(left), left + '.name', right, ast.ns);
+							self.assignId(intoId, getOwnValueDyn(getParentScope(left), left + '.name'));
 						}
 					);
 					returnFn(intoId || right);
-				}, 1);
+				}, undefined, 1);
 				break
 			case AST.ArrayExpression:
 				args = [];
@@ -2871,7 +2901,7 @@ class ASTCompiler {
 				args = [];
 				if (ast.properties.some(property => property.computed)) {
 					intoId = intoId || this.nextId();
-					this.assignId(intoId, "{}");
+					this.assignId(intoId, '{}');
 					ast.properties.forEach(property => {
 						if (property.computed) {
 							left = self.nextId();
@@ -2881,7 +2911,7 @@ class ASTCompiler {
 						}
 						right = self.nextId();
 						self.recurse(property.value, right);
-						self.assignId(self.member(intoId, left, property.computed), right);
+						self.assignId(member(intoId, left, property.computed), right);
 					});
 				} else {
 					ast.properties.forEach(property => {
@@ -2891,13 +2921,13 @@ class ASTCompiler {
 							undefined,
 							function (expr) {
 								args.push(
-									self.escape(property.key.type === AST.Identifier ? property.key.name : property.key.value + '')
-									  + ":" + expr
+									escape(property.key.type === AST.Identifier ? property.key.name : property.key.value + '')
+									  + ':' + expr
 								);
 							}
 						);
 					});
-					expression = "{" + args.join(",") + "}";
+					expression = '{' + args.join(',') + '}';
 					if (wantScope) {
 						expression = this.pushScope(expression);
 					}
@@ -2914,28 +2944,43 @@ class ASTCompiler {
 				returnFn(intoId || expression);
 				break
 			case AST.NGValueParameter:
-				this.assignId(intoId, "v");
-				returnFn(intoId || "v");
+				this.assignId(intoId, 'v');
+				returnFn(intoId || 'v');
 				break
 		}
 	}
 
-	getHasOwnProperty (element, property) {
-		const key = element + "." + property;
+	// getHasOwnProperty (element, property) {
+	// 	const key = element + "." + property
+	// 	const own = this.current().own
+	// 	if (!own.hasOwnProperty(key)) {
+	// 		own[key] = this.nextId(
+	// 			false,
+	// 			element + "&&(" + escape(property) + " in " + element + ")"
+	// 		)
+	// 	}
+	// 	return own[key]
+	// }
+
+	hasCachedExpr (cacheKey) {
+		return this.current().own.hasOwnProperty(cacheKey)
+	}
+
+	getCacheId (cacheKey) {
 		const own = this.current().own;
-		if (!own.hasOwnProperty(key)) {
-			own[key] = this.nextId(
-				false,
-				element + "&&(" + this.escape(property) + " in " + element + ")"
-			);
-		}
-		return own[key]
+		return own[cacheKey]
+	}
+
+	setCacheId (cacheKey, id) {
+		const own = this.current().own;
+		if (own[cacheKey]) throw new Error('cache key already has value set')
+		own[cacheKey] = id;
 	}
 
 	useScope () {
 		const own = this.current().own;
 		if (!own.hasOwnProperty('_scope_')) {
-			this.current().vars.push('c=use(s)');
+			this.current().vars.unshift('c=use(s)');
 			own['_scope_'] = 'c';
 		}
 	}
@@ -2950,13 +2995,13 @@ class ASTCompiler {
 	 */
 	assignId (id, value) {
 		if (!id) return
-		this.current().body.push(id, "=", value, ";");
+		this.current().body.push(id, '=', value, ';');
 		return id
 	}
 
 	pushElement (id, value) {
 		if (!id) return
-		this.current().body.push(id, ".push(", value, ");");
+		this.current().body.push(id, '.push(', value, ');');
 	}
 
 	pushScope (expression) {
@@ -2974,38 +3019,10 @@ class ASTCompiler {
 		return 'c.lookupValue("' + name + (ns ? '","' + ns : '') + '")'
 	}
 
-	getOwnScope (scopeId, name) {
-		return this.getOwnScopeDyn(scopeId, '"' + name + '"')
-	}
-
-	getOwnScopeDyn (scopeId, id) {
-		this.useScope();
-		return scopeId + '.getOwnScope(' + id + ')'
-	}
-
 	forEachScope (scopeId, accumulatorId, lambdaId) {
-		this.useScope();
 		const result = scopeId + '.forEachScope(es=>'
 			+ accumulatorId + '.push(' + lambdaId + '.call(undefined,es)))';
 		this.current().body.push(result, ';');
-	}
-
-	hasOwnValue (scopeId, name) {
-		return this.hasOwnValueDyn(scopeId, '"' + name + '"')
-	}
-
-	hasOwnValueDyn (scopeId, id) {
-		this.useScope();
-		return scopeId + '.hasOwnValue(' + id + ')'
-	}
-
-	getOwnValue (scopeId, name) {
-		return this.getOwnValueDyn(scopeId, '"' + name + '"')
-	}
-
-	getOwnValueDyn (scopeId, id) {
-		this.useScope();
-		return scopeId + '.getOwnValue(' + id + ')'
 	}
 
 	setOwnValue (scopeId, name, value, ns) {
@@ -3013,18 +3030,9 @@ class ASTCompiler {
 	}
 
 	setOwnValueDyn (scopeId, id, value, ns) {
-		this.useScope();
 		this.current().body.push( // whoever actually pushes a command onto body is responsible for the ';':
 			scopeId + '.setOwnValue(' + id + ',' + value + (ns ? ',"' + ns + '"' : '') + ');'
 		);
-	}
-
-	isArray (id) {
-		return 'Array.isArray(' + id + ')'
-	}
-
-	isNumber (id) {
-		return '!isNaN(' + id + ')'
 	}
 
 	filter (filterName) {
@@ -3032,14 +3040,6 @@ class ASTCompiler {
 			this.state.filters[filterName] = this.nextId(true);
 		}
 		return this.state.filters[filterName]
-	}
-
-	ifDefined (id, defaultValue) {
-		return 'ifd(' + id + ',' + this.escape(defaultValue) + ')'
-	}
-
-	plus (left, right) {
-		return 'pls(' + left + ',' + right + ')'
 	}
 
 	return_ (id) {
@@ -3054,13 +3054,13 @@ class ASTCompiler {
 			consequentFn();
 		} else {
 			const body = this.current().body;
-			body.push("if(", test, "){");
+			body.push('if(', test, '){');
 			consequentFn();
-			body.push("}");
+			body.push('}');
 			if (alternateFn) {
-				body.push("else{");
+				body.push('else{');
 				alternateFn();
-				body.push("}");
+				body.push('}');
 			}
 		}
 	}
@@ -3068,10 +3068,10 @@ class ASTCompiler {
 	// "lazy" functions are just conveniences to curry calls to recurse and setValue,
 	// used only in conjunction with _if() (which expects curried functions for its
 	// consequentFn and alternateFn parameters).
-	lazyRecurse (ast, intoId, wantScope, returnFn, create, skipWatchIdCheck) {
+	lazyRecurse (ast, intoId, wantScope, returnFn, ckPrefix, create, skipWatchIdCheck) {
 		const self = this;
 		return function () {
-			self.recurse(ast, intoId, wantScope, returnFn, create, skipWatchIdCheck);
+			self.recurse(ast, intoId, wantScope, returnFn, ckPrefix, create, skipWatchIdCheck);
 		}
 	}
 
@@ -3080,65 +3080,6 @@ class ASTCompiler {
 		return function () {
 			self.assignId(id, value);
 		}
-	}
-
-	not (expression) {
-		return "!(" + expression + ")"
-	}
-
-	and (left, right, needParens = false) {
-		return needParens
-		  ? `(${left})&&(${right})`
-		  : left + "&&" + right
-	}
-
-	scopeIsNull (scopeId) {
-		return scopeId + '.isNull()'
-	}
-
-	isNull (expression) {
-		return expression + "==null"
-	}
-
-	notNull (expression) {
-		return expression + "!=null"
-	}
-
-	member (left, right, computed) {
-		if (computed) return this.computedMember(left, right)
-		return this.nonComputedMember(left, right)
-	}
-
-	computedMember (left, right) {
-		return left + "[" + right + "]"
-	}
-
-	nonComputedMember (left, right) {
-		const SAFE_IDENTIFIER = /^[$_a-zA-Z][$_a-zA-Z0-9]*$/;
-		const UNSAFE_CHARACTERS = /[^$_a-zA-Z0-9]/g;
-		let expr = '';
-		if (SAFE_IDENTIFIER.test(right)) {
-			expr = left + "." + right;
-		} else {
-			right = right.replace(UNSAFE_CHARACTERS, this.stringEscapeFn);
-			expr = left + '["' + right + '"]';
-		}
-		return expr
-	}
-
-	stringEscapeFn (c) {
-		return "\\u" + ("0000" + c.charCodeAt(0).toString(16)).slice(-4)
-	}
-
-	escape (value) {
-		if (isString(value))
-			return "'" + value.replace(this.stringEscapeRegex, this.stringEscapeFn) + "'"
-		if (isNumber(value)) return value.toString()
-		if (value === true) return "true"
-		if (value === false) return "false"
-		if (value === null) return "null"
-		if (typeof value === "undefined") return "undefined"
-		throw new Error("IMPOSSIBLE")
 	}
 
 	nextId (skip, init) {
@@ -3152,6 +3093,97 @@ class ASTCompiler {
 	current () {
 		return this.state[this.state.computing]
 	}
+}
+
+function getCacheKey (ast, isScope, prefix) {
+	return (prefix ? prefix + '::' : '') + (isScope ? 'scope::' : '') + AST.serialize(ast)
+}
+
+function getOwnScope (scopeId, name) {
+	return getOwnScopeDyn(scopeId, '"' + name + '"')
+}
+
+function getOwnScopeDyn (scopeId, id) {
+	return scopeId + '.getOwnScope(' + id + ')'
+}
+
+function getParentScope (scopeId) {
+	return scopeId + '._parent'
+}
+
+function getOwnValue (scopeId, name) {
+	return getOwnValueDyn(scopeId, '"' + name + '"')
+}
+
+function getOwnValueDyn (scopeId, id) {
+	return scopeId + '.getOwnValue(' + id + ')'
+}
+
+function if_Defined (id, defaultValue) {
+	return 'ifd(' + id + ',' + escape(defaultValue) + ')'
+}
+
+function plus_ (left, right) {
+	return 'pls(' + left + ',' + right + ')'
+}
+
+function not_ (expression) {
+	return '!(' + expression + ')'
+}
+
+function and_ (left, right, needParens = false) {
+	return needParens
+		? `(${left})&&(${right})`
+		: left + '&&' + right
+}
+
+function scopeIsNull (scopeId) {
+	return scopeId + '.isNull()'
+}
+
+function isNull (expression) {
+	return expression + '==null'
+}
+
+function notNull (expression) {
+	return expression + '!=null'
+}
+
+function member (left, right, computed) {
+	if (computed) return computedMember(left, right)
+	return nonComputedMember(left, right)
+}
+
+function computedMember (left, right) {
+	return left + '[' + right + ']'
+}
+
+function nonComputedMember (left, right) {
+	const SAFE_IDENTIFIER = /^[$_a-zA-Z][$_a-zA-Z0-9]*$/;
+	const UNSAFE_CHARACTERS = /[^$_a-zA-Z0-9]/g;
+	let expr = '';
+	if (SAFE_IDENTIFIER.test(right)) {
+		expr = left + '.' + right;
+	} else {
+		right = right.replace(UNSAFE_CHARACTERS, stringEscapeFn);
+		expr = left + '["' + right + '"]';
+	}
+	return expr
+}
+
+function escape (value) {
+	if (isString(value))
+		return "'" + value.replace(stringEscapeRegex, stringEscapeFn) + "'"
+	if (isNumber(value)) return value.toString()
+	if (value === true) return 'true'
+	if (value === false) return 'false'
+	if (value === null) return 'null'
+	if (typeof value === 'undefined') return 'undefined'
+	throw new Error('IMPOSSIBLE')
+}
+
+function stringEscapeFn (c) {
+	return '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4)
 }
 
 function append(builder, str) {
