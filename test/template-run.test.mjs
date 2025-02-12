@@ -47,6 +47,52 @@ describe("tinql.templater", function() {
       //   expect(tinql.compileTemplate("tmp").ast).to.be.a("object")
       // })
 
+      !options.interpreter && describe('Avoiding internal redundancy', function () {
+        it('shoud avoid redundant internal structures', function () {
+          const template = '{[list a.b.c|punc:"1,2"]}{[e.f]}{[endlist]}|{[list a.b.c|filter:d|punc:"1;2"]}{[e.f]}{[endlist]}'
+          evaluate = tinql.compileTemplate(template)
+          const data = {
+            a: {
+              b: {
+                c: [
+                  {
+                    d: true,
+                    e: {
+                      f: "one"
+                    }
+                  },
+                  {
+                    d: false,
+                    e: {
+                      f: "two"
+                    }
+                  },
+                  {
+                    d: true,
+                    e: {
+                      f: "three"
+                    }
+                  },
+                ]
+              }
+            }
+          }
+          const result = evaluate(data)
+          assert.strictEqual(result, 'one,two,three|one;three')
+          const str = evaluate.toString()
+          // maybe check some optimization stuff here?
+          // ensure we only look up a, b, and c once each:
+          assert.strictEqual(str.split('lookupScope("a")').length, 2)
+          assert.strictEqual(str.split('getOwnScope("b")').length, 2)
+          // ensure c is looked up once as a value and once as a scope:
+          assert.strictEqual(str.split('getOwnValue("c")').length, 2)
+          assert.strictEqual(str.split('getOwnScope("c")').length, 2)
+          // ensure we look up e and f twice each, since lambdas are not reduced:
+          assert.strictEqual(str.split('lookupScope("e")').length, 3)
+          assert.strictEqual(str.split('getOwnValue("f")').length, 3)
+        })
+      })
+
       describe('Assembling text templates', function () {
         it('should assemble a simple template', function () {
           const template = 'Hello {[planet]}!'

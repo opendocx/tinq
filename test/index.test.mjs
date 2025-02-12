@@ -325,11 +325,11 @@ describe("tinql", function() {
 				})
 
 				!options.interpreter && it("should not contain redundant chunks of compiled code", function () {
-					//evaluate = tinql.compileExpression("a.b.c + a.b.d")
-					//const str = evaluate.toString()
-					// const funcs = ['a.b.c','a[b].c','a["b"].c'].map(s => s + ':\n' + tinql.compileExpression(s).toString())
-					// console.log(funcs.join('\n\n'))
-					// debugger
+					evaluate = tinql.compileExpression("a.b.c + a.b.d")
+					const str = evaluate.toString()
+					expect(str.split('.lookupScope(').length).to.equal(2) // only one scope lookup for a
+					expect(str.split('.getOwnScope(').length).to.equal(2) // only one child scope for b
+					expect(str.split('.getOwnValue(').length).to.equal(3) // one child value EACH for c & d
 				})
 			});
 	
