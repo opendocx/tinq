@@ -1,16 +1,17 @@
-import { isConstant, isDefined, isLiteral, isString, isNumber, getStringValue, ifDefined, plusFn, assignableAST, isAssignable, getInputs, findConstantExpressions, noop } from "./utils.mjs";
+import { isConstant, isDefined, isLiteral, plusFn, findConstantExpressions, noop } from "./utils.mjs";
+import { GetFilter } from "./index.mjs"
 import { useScope } from "./scope.mjs"
 import { AST } from "./ast.mjs";
 
-export class ASTInterpreter {
-  constructor (filters) {
-    this.filters = filters
+export class ASTInterpreterBase {
+  constructor () {
+    this.filters = GetFilter
   }
 
   compile (ast) {
     const self = this
     if (ast) {
-      findConstantExpressions(ast, self.filters)
+      findConstantExpressions(ast, this.filters)
       // let assignable
       // let assign
       // if ((assignable = assignableAST(ast))) {
@@ -28,7 +29,7 @@ export class ASTInterpreter {
     // 		watch.watchId = key
     // 	})
     // }
-    let fn = self.recurse(ast)
+    let fn = this.recurse(ast)
     // if (!ast || (ast.type === AST.Program && !ast.body.length)) { // special case
     // 	fn = noop
     // } else if (ast.type === AST.Program) { // it's a template AST, so compile the template
@@ -62,7 +63,7 @@ export class ASTInterpreter {
   recurse (ast, wantScope, create) {
     if (!ast) return noop
     const self = this
-    let left, right, args, expression
+    let left, right, args, expression, key
     // if (ast.winput) {
     // 	return this.inputs(ast.winput, ast.watchId)
     // }
@@ -71,40 +72,30 @@ export class ASTInterpreter {
       case AST.TemplateBlock:
         args = ast.body.map(elem => self.recurse(elem))
         return function template_block (scope) {
-          return args
-            .map(fn => fn(scope))
-            .join('')
+          return self.templateBlock(args, scope)
         }
       case AST.TemplateElement:
-        return () => ast.text //this.staticText(ast.text)
+        return () => self.templateElement(ast.text)
       case AST.ContentField:
+        key = this.fieldKey(ast)
         right = this.recurse(ast.expression)
         return function content_field (scope) {
-          return right(scope) + ""
+          return self.contentField(right, scope, key, ast.expression)
         }
       case AST.ConditionalField:
+        key = this.fieldKey(ast, 'b')
         expression = this.recurse(ast.test)
         left = this.recurse(ast.consequent)
         right = ast.alternate && this.recurse(ast.alternate)
-        return function conditional_field (scope, assign, inputs) {
-          const value = expression(scope, assign, inputs)
-            ? left(scope, assign, inputs)
-            : (right ? right(scope, assign, inputs) : '')
-          return value
+        return function conditional_field (scope) {
+          return self.conditionalField(expression, left, right, scope, key)
         }
       case AST.ListField:
+        key = this.fieldKey(ast, 'i')
         expression = this.recurse(ast.expression, true)
-        right = this.recurse(ast.content) // in essence a lambda
+        right = this.recurse(ast.content)
         return function list_field (scope) {
-          const exprListScope = expression(scope)
-          if (exprListScope && exprListScope.length) {
-            const results = []
-            exprListScope.forEachScope(enumScope => {
-              results.push(right.call(undefined, enumScope))
-            })
-            return results.join('')
-          }
-          return ''
+          return self.listField(expression, right, scope, key)
         }
       case AST.Literal:
         return () => ast.value
@@ -315,10 +306,59 @@ export class ASTInterpreter {
     }
   }
 
+  fieldKey (ast, suffix) {}
+
+  templateBlock (elemFns, scope) {
+    return elemFns.map(fn => fn(scope))
+  }
+
+  templateElement (text) {
+    return text
+  }
+
+  contentField (valueFn, scope, key, ast) {
+    return valueFn(scope)
+  }
+
+  conditionalField (testFn, consequentFn, alternateFn, scope, key) {
+    if (testFn(scope)) {
+      return consequentFn(scope)
+    } else if (alternateFn) {
+      return alternateFn(scope)
+    }
+  }
+
+  listField (listFn, lambdaContentFn, scope, key) {
+    const listValue = listFn(scope)
+    if (listValue && listValue.length) {
+      const results = []
+      listValue.forEachScope(enumScope => {
+        results.push(lambdaContentFn.call(undefined, enumScope))
+      })
+      return results
+    }
+  }
+
   // inputs (input, watchId) {
   // 	return function (scope, value, inputs) {
   // 		if (inputs) return inputs[watchId]
   // 		return input(scope, value)
   // 	}
   // }
+}
+
+export class ASTInterpreter extends ASTInterpreterBase {
+  // just a few function overrides to ensure text templates are composited correctly:
+
+  templateBlock (elemFns, scope) {
+    return super.templateBlock(elemFns, scope).join('')
+  }
+
+	contentField (valueFn, scope) {
+		return super.contentField(valueFn, scope) + '' // convert to string
+	}
+
+	listField (listFn, lambdaContentFn, scope) {
+    return super.listField(listFn, lambdaContentFn, scope).join('')
+	}
 }
