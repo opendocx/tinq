@@ -2,7 +2,7 @@ import { describe, it } from 'mocha'
 import { Tinq, AST } from '../src/index.mjs'
 import assert from 'assert'
 
-const tinql = new Tinq()
+const tinq = new Tinq()
 
 /*
 {[if x]}
@@ -31,8 +31,9 @@ const tinql = new Tinq()
 describe('Extracting logic from text templates', function () {
   it('should retrieve a unified AST for the TestNest text template', function () {
     const template = '{[if x]}{[list []]}{[test]}{[endlist]}{[elseif y]}{[A]}{[list outer]}{[z?B:B2]}{[list inner]}{[C]}{[endlist]}{[D]}{[endlist]}{[E]}{[else]}{[F]}{[list another]}{[G]}{[endlist]}{[H]}{[endif]}'
-    const logic = tinql.extractTemplateLogic(template)
-    assert.deepStrictEqual(logic, TestNestLogicTree)
+    const logic = tinq.extractTemplateLogic(template)
+    const expected = TestNestLogicTree
+    assert.deepStrictEqual(logic, expected)
   })
 
   it('should retrieve a unified AST for the redundant_if text template', function () {
@@ -41,14 +42,15 @@ Well, all I can say is “{[if  x]}Something {[adjective]}{[else]}nothing{[endif
 {[name]}, do you think {[if x]}about it much{[else]}anything{[endif]}?
         
 The logic tree should include the if twice, but should call for the data only once.`
-    const logic = tinql.extractTemplateLogic(template)
-    assert.deepStrictEqual(logic, redundant_if_logic_tree)
+    const logic = tinq.extractTemplateLogic(template)
+    const expected = redundant_if_logic_tree
+    assert.deepStrictEqual(logic, expected)
   })
 
   it('should re-emit an expression used in content after the same expression appears in an If', function () {
     const template = '{[if x]}{[x]}{[endif]}'
-    const logic = tinql.extractTemplateLogic(template)
-    assert.deepStrictEqual(logic, [
+    const logic = tinq.extractTemplateLogic(template)
+    const expected = [
       {
         type: 'If',
         expr: 'x',
@@ -59,13 +61,14 @@ The logic tree should include the if twice, but should call for the data only on
           id: '2'
         }]
       }
-    ])
+    ]
+    assert.deepStrictEqual(logic, expected)
   })
 
   // it('should not filter out less-conditional (or unconditional) usage following more-conditional usage', function() {
-  //     const template = "{[if a]}{[if b]}{[x]}{[endif]}{[x]}{[endif]}{[x]}";
-  //     let logic = tinql.extractTemplateLogic(template);
-  //     assert.deepStrictEqual(logic, [
+  //     const template = '{[if a]}{[if b]}{[x]}{[endif]}{[x]}{[endif]}{[x]}'
+  //     const logic = tinq.extractTemplateLogic(template)
+  //     const expected = [
   //         {
   //             type: 'If',
   //             expr: "a",
@@ -89,8 +92,9 @@ The logic tree should include the if twice, but should call for the data only on
   //             "type": 'Content',
   //             "expr": "x",
   //         }
-  //     ]);
-  // });
+  //     ]
+  //     assert.deepStrictEqual(logic, expected)
+  // })
 
   it('SHOULD filter out more-conditional usage that PRECEDES less-conditional (or unconditional) usage', function () {
     // either we need to do this (A), or we need to (B) change OpenDocx so it ignores the more-conditional usages as its outputting XML,
@@ -98,8 +102,8 @@ The logic tree should include the if twice, but should call for the data only on
     // Note: it's not possible, under the current approach (A), to completely optimize out redundant fields.  We will address this in a
     // rewrite.  In the meantime, we have a partial approach for A (that this case illustrates) and we are also doing (C).
     const template = '{[if a]}{[if b]}{[x]}{[endif]}{[x]}{[endif]}{[x]}'
-    const logic = tinql.extractTemplateLogic(template)
-    assert.deepStrictEqual(logic, [
+    const logic = tinq.extractTemplateLogic(template)
+    const expected = [
       {
         type: 'If',
         expr: 'a',
@@ -119,13 +123,14 @@ The logic tree should include the if twice, but should call for the data only on
         id: '7',
         idd: ['5', '3'],
       }
-    ])
+    ]
+    assert.deepStrictEqual(logic, expected)
   })
 
   it('should filter out conditional usage that follows unconditional usage', function () {
     const template = '{[x]}{[if a]}{[x]}{[endif]}'
-    const logic = tinql.extractTemplateLogic(template)
-    assert.deepStrictEqual(logic, [
+    const logic = tinq.extractTemplateLogic(template)
+    const expected = [
       {
         type: 'Content',
         expr: 'x',
@@ -137,13 +142,14 @@ The logic tree should include the if twice, but should call for the data only on
         id: '2',
         contentArray: []
       }
-    ])
+    ]
+    assert.deepStrictEqual(logic, expected)
   })
 
   it('should NOT filter out usage in an If field that follows unconditional usage in a Content field', function () {
     const template = '{[x]}{[if x]}{[y]}{[endif]}'
-    const logic = tinql.extractTemplateLogic(template)
-    assert.deepStrictEqual(logic, [
+    const logic = tinq.extractTemplateLogic(template)
+    const expected = [
       {
         type: 'Content',
         expr: 'x',
@@ -158,18 +164,21 @@ The logic tree should include the if twice, but should call for the data only on
           id: '3',
         }]
       }
-    ])
+    ]
+    assert.deepStrictEqual(logic, expected)
   })
 
   it('should not omit a content node when the same expression was used earlier in a conditional!', function () {
     const template = '{[if x]}{[x]}{[elseif y]}{[y]}{[else]}{[z]}{[endif]}'
-    const logic = tinql.extractTemplateLogic(template)
-    assert.deepStrictEqual(logic, XYZLogicTree)
+    const logic = tinq.extractTemplateLogic(template)
+    const expected = XYZLogicTree
+    assert.deepStrictEqual(logic, expected)
   })
 
   it('correctly parses & extracts logic from the ugly nested if/elseif template', function () {
-    const result = tinql.extractTemplateLogic(ugly_nested_template)
-    assert.deepStrictEqual(result, ugly_nested_contentArray)
+    const result = tinq.extractTemplateLogic(ugly_nested_template)
+    const expected = ugly_nested_contentArray
+    assert.deepStrictEqual(result, expected)
   })
 })
 

@@ -5,8 +5,8 @@ import { toContentArray } from '../src/legacy.mjs'
 
 var assert = chai.assert
 
-const tinql = new Tinq()
-const templateParser = tinql.templater
+const tinq = new Tinq()
+const templateParser = tinq.templater
 const parseTemplateLegacy = (text) => {
   // warning: this is a convenience function for these (old/legacy) unit tests, but it would be a bad idea
   // to do something like this in production. It does a lot of wasted work:  templateParser parses the whole template

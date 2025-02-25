@@ -1,4 +1,5 @@
 import { primitiveConstructors } from './utils.mjs'
+import equal from 'fast-deep-equal'
 
 export function useScope (scope) {
 	return scope instanceof Scope ? scope : new Scope(scope)
@@ -118,12 +119,20 @@ export class Scope {
     let result = this.value[ident]
     if (typeof result === 'function' && result.ast) {
       result = result.apply(undefined, [this])
+      // the following would cause all text-based ExternalFiles to auto-compose, but we don't want this here.
+      // if (result instanceof ExternalFile && typeof result.data !== 'object') {
+      //   result = result.data
+      // }
     }
     return result
   }
 
   setOwnValue (ident, value, ns) {
     this.value[ident] = value
+  }
+
+  root () {
+    return this._parent ? this._parent.root() : this
   }
 
   isNull () {
@@ -219,41 +228,30 @@ export function parseListExample (example) {
   }
 }
 
-// An instance of ExternalBinary represents an external file or BLOB that
+// An instance of ExternalFile represents an external file or BLOB that
 // (1) TINQ does not know how to create (hence "External"... TINQ only does text)
 // (2) CAN be created dynamically by some other, (again) external, code
 // (3) needs data from inside TINQ's scope to produce this external file
 // (4) (optionally) needs to composite this external output with other output ALSO being created by TINQ
-export class ExternalBinary {
-  constructor (props, scope, contentType = '') {
-    for (const [key, value] of Object.entries(props)) {
-      this[key] = value
-    }
-    if (scope || !('scope' in this)) {
-      this.scope = scope
-    }
-    // contentType is inherited from props (if it's there) or it can be explicitly specified
-    // contentType should be 'text', 'markdown', or 'docx' (for indirects using opendocx)
-    if (contentType || !('contentType' in this)) {
-      this.contentType = contentType
+export class ExternalFile {
+  constructor (template, data) {
+    this.template = template
+    if (data || !('data' in this)) {
+      this.data = data
     }
   }
 
   isEqualTo (that) {
     // compare based on enumeration of that's properties instead of this,
     // because we want to match if that has no "id" property even if this does!
-    return Object
-      .keys(that)
-      .every(propName => {
-        const indPropVal = that[propName]
-        return (indPropVal && (indPropVal instanceof Scope))
-          ? indPropVal.valueEqualTo(this[propName])
-          : indPropVal === this[propName]
-      })
+    return equal(that.template, this.template) && equal(that.data, this.data)
   }
 
-  // toString () {} // When an ExternalBinary is encountered during (synchronous) text-based assembly,
-  //                // toString() is called on the instance in order to retrieve a text representation. (maybe)
-  //                // In (async) docx-based assembly, encountering an indirect causes a special
-  //                // placeholder to be inserted so the resulting files can be composed later.
+  toString () {
+    // When an ExternalFile is encountered during (synchronous) text-based assembly,
+    // it is converted to a string (by adding "") to retrieve a text representation.
+    return this.data + ''
+    // In (async) docx-based assembly, encountering an indirect causes a special
+    // placeholder to be inserted so the resulting files can be composed later.
+  }
 }

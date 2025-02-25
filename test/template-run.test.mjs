@@ -12,7 +12,7 @@ var expect = chai.expect
 
 var testPhases = ['interpreter', 'compiler']
 
-describe("tinql.templater", function() {
+describe("tinq.templater", function() {
 
   testPhases.forEach(phase => {
     const options = { interpreter: (phase === 'interpreter') }
@@ -20,7 +20,7 @@ describe("tinql.templater", function() {
     describe(phase, function() {
       var scope;
       var evaluate;
-      var tinql = new Tinq(options)
+      var tinq = new Tinq(options)
   
       beforeEach(function() {
         scope = {
@@ -33,24 +33,24 @@ describe("tinql.templater", function() {
       })
   
       it("should return a function", function() {
-        var c = tinql.compileTemplate("")
+        var c = tinq.compileTemplate("")
         expect(c).to.be.a("function")
       })
   
       it("should throw an error if the given value is not a string", function() {
         expect(function() {
-          tinql.compileTemplate()
+          tinq.compileTemplate()
         }).to.throw("src must be a string or AST object; instead saw 'undefined'")
       })
 
       // it("should expose the ast", function() {
-      //   expect(tinql.compileTemplate("tmp").ast).to.be.a("object")
+      //   expect(tinq.compileTemplate("tmp").ast).to.be.a("object")
       // })
 
       !options.interpreter && describe('Avoiding internal redundancy', function () {
         it('shoud avoid redundant internal structures', function () {
           const template = '{[list a.b.c|punc:"1,2"]}{[e.f]}{[endlist]}|{[list a.b.c|filter:d|punc:"1;2"]}{[e.f]}{[endlist]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const data = {
             a: {
               b: {
@@ -96,19 +96,19 @@ describe("tinql.templater", function() {
       describe('Assembling text templates', function () {
         it('should assemble a simple template', function () {
           const template = 'Hello {[planet]}!'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           // const data = TObject.pushObject({ planet: 'World' })
           const data = { planet: 'World' }
           const result = evaluate(data)
           assert.strictEqual(result, 'Hello World!')
         })
         // it('should compile a conditional expression', function () {
-        //   evaluate = tinql.compileExpression('Middle?Middle+" ":""')
+        //   evaluate = tinq.compileExpression('Middle?Middle+" ":""')
         //   console.log(evaluate.toString())
         // })
         it('should assemble the FullName template', function () {
           const template = '{[First]} {[if Middle]}{[Middle]} {[endif]}{[Last]}{[if Suffix]} {[Suffix]}{[endif]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const data = { First: 'John', Last: 'Smith', Suffix: 'Jr.' }
           assert.strictEqual(evaluate(data), 'John Smith Jr.')
           data.Middle = 'W.'
@@ -117,35 +117,35 @@ describe("tinql.templater", function() {
         })
         it('should assemble the if/endif template', function () {
           const template = '{[if true]}A{[endif]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const data = {}
           const result = evaluate(data)
           assert.strictEqual(result, 'A')
         })
         it('should assemble the if/else/endif template', function () {
           const template = '{[if false]}A{[else]}B{[endif]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const data = {}
           const result = evaluate(data)
           assert.strictEqual(result, 'B')
         })
         it('should assemble the if/elseif/endif template', function () {
           const template = '{[if false]}A{[elseif true]}B{[endif]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const data = {}
           const result = evaluate(data)
           assert.strictEqual(result, 'B')
         })
         it('should assemble the if/elseif/else/endif template', function () {
           const template = '{[if false]}A{[elseif false]}B{[else]}C{[endif]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const data = {}
           const result = evaluate(data)
           assert.strictEqual(result, 'C')
         })
         it('should assemble the oceans template', function () {
           const template = 'Oceans are:\n\n{[list Oceans]}\n * {[Name]} (Average depth {[AverageDepth]} m)\n{[endlist]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const data = {
             Planet: 'Earth',
             Continents: ['Africa', 'Asia', 'Europe', 'North America', 'South America', 'Antarctica', 'Australia/Oceania'],
@@ -164,11 +164,11 @@ describe("tinql.templater", function() {
         })
         it('should assemble a filtered list', function () {
           const template = 'Continents containing u:\n\n{[list ContinentsWithU]}\n * {[this]}\n{[endlist]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const data = {
             Planet: 'Earth',
             Continents: ['Africa', 'Asia', 'Europe', 'North America', 'South America', 'Antarctica', 'Australia/Oceania'],
-            ContinentsWithU: tinql.compileExpression('Continents|filter:this.includes("u")'),
+            ContinentsWithU: tinq.compileExpression('Continents|filter:this.includes("u")'),
             Oceans: [
               { Name: 'Pacific', AverageDepth: 3970 },
               { Name: 'Atlantic', AverageDepth: 3646 },
@@ -184,7 +184,7 @@ describe("tinql.templater", function() {
         })
         it('should assemble a dynamically filtered list', function () {
           const template = '{[list Oceans | filter: AverageDepth < 3500]}\n * {[Name]}\n{[endlist]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const data = {
             Oceans: [
               { Name: 'Pacific', AverageDepth: 3970 },
@@ -199,7 +199,7 @@ describe("tinql.templater", function() {
         })
         it('should assemble a dynamically sorted list (ascending by name)', function () {
           const template = '{[list Oceans | sort: Name]}\n*{[Name]}\n{[endlist]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const data = {
             Oceans: [
               { Name: 'Pacific', AverageDepth: 3970 },
@@ -214,7 +214,7 @@ describe("tinql.templater", function() {
         })
         it('should assemble a dynamically sorted list (descending by AverageDepth)', function () {
           const template = '{[list Oceans | sort: -AverageDepth]}\n{[Name]}\n{[endlist]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const data = {
             Oceans: [
               { Name: 'Pacific', AverageDepth: 3970 },
@@ -229,7 +229,7 @@ describe("tinql.templater", function() {
         })
         it('should assemble a dynamically filtered list of wrapped strings', function () {
           const template = '{[list Oceans | filter: AverageDepth < 3500]}\n * {[this]}\n{[endlist]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const data = {
             Oceans: [
               new String('Pacific'),
@@ -249,7 +249,7 @@ describe("tinql.templater", function() {
         })
         it('should assemble a dynamically filtered list of wrapped strings WITH filters', function () {
           const template = '{[list Oceans | filter: AverageDepth < 3500]}\n * {[this|upper]}\n{[endlist]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const data = {
             Oceans: [
               new String('Pacific'),
@@ -269,73 +269,73 @@ describe("tinql.templater", function() {
         })
         it('should assemble a dynamically sorted list (descending by birth date, then ascending by name)', function () {
           const template = '{[list Children | sort:-Birth:+Name]}\n{[Name]}\n{[endlist]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const result = evaluate(data_Children)
           assert.strictEqual(result, 'Eric\nMark\nTed\nBeth\nYolanda\nAlice\nJohn\n')
         })
         it('should assemble a dynamically sorted THEN filtered list', function () {
           const template = "{[list Children | sort:-Birth:+Name | filter:Group=='A']}\n*{[Name]}\n{[endlist]}"
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const result = evaluate(data_Children)
           assert.strictEqual(result, '*Beth\n*Yolanda\n*Alice\n*John\n')
         })
         it('should assemble a dynamically filtered THEN sorted list', function () {
           const template = "{[list Children | filter:Group=='A' | sort:-Birth:+Name]}\n*{[Name]}\n{[endlist]}"
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const result = evaluate(data_Children)
           assert.strictEqual(result, '*Beth\n*Yolanda\n*Alice\n*John\n')
         })
         it('check if an item is in a list using the "any" filter', function () {
           const template = "{[if Children|any:Name == 'Yolanda']}We found Yolanda!{[else]}No luck.{[endif]}"
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const result = evaluate(data_Children)
           assert.strictEqual(result, 'We found Yolanda!')
         })
         it('check if any nested lists meet a qualification by chaining the "any" filter (+ nested scope lookups)', function () {
-          evaluate = tinql.compileTemplate('Future families: {[Families|any:Children|any:Birthdate>testDate]}')
+          evaluate = tinq.compileTemplate('Future families: {[Families|any:Children|any:Birthdate>testDate]}')
           // "Any family has any children with a birthdate AFTER testDate" ... true for our data set
           const data = {
             ...TV_Family_Data,
             testDate: new Date(2019, 11, 6),
           }
           assert.strictEqual(evaluate(data), 'Future families: true')
-          const evaluate2 = tinql.compileTemplate('Past families: {[Families|filter:Surname!="Robinson"|any:Children|any:Birthdate>testDate]}')
+          const evaluate2 = tinq.compileTemplate('Past families: {[Families|filter:Surname!="Robinson"|any:Children|any:Birthdate>testDate]}')
           // "Any family (OTHER THAN the Robinsons!) has any children with a birthdate AFTER testDate"... false for our data set, since the Robinsons are the only future-family included.
           assert.strictEqual(evaluate2(data), 'Past families: false')
         })
         it('check if all items in a list meet a criteria using the "every" filter', function () {
           const template = "{[if Children|every:Group == 'A' || Group == 'B']}Either A or B{[endif]}"
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const result = evaluate(data_Children)
           assert.strictEqual(result, 'Either A or B')
         })
         it('recognize that NOT all items in a list meet a criteria (using "every" filter)', function () {
           const template = "{[if Children|every:Group == 'A']}All A{[else]}Not all A{[endif]}"
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const result = evaluate(data_Children)
           assert.strictEqual(result, 'Not all A')
         })
         it('should find a specific item in a list', function () {
           const template = 'First child with a d in their name is {[(Children|find:Name.includes("d")).Name]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const result = evaluate(data_Children)
           assert.strictEqual(result, 'First child with a d in their name is Ted')
         })
         it('should use grouping to find unique items in a list (+ list punctuation)', function () {
           const template = 'Children were born in the years {[list Children|group:Birth.getFullYear()|sort:_key|punc:\'1, 2 and 3\']}{[_key]}{[endlist]}.'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const result = evaluate(data_Children)
           assert.strictEqual(result, 'Children were born in the years 1970, 2000 and 2007.')
         })
         it('should use grouping to create nested lists from a flat list', function () {
           const template = 'Children were born in the years {[list Children|group:Birth.getFullYear()|sort:_key|punc:"1; 2; and 3"]}{[_key]} ({[list _values|sort:Name|punc:"1, 2 and 3"]}{[Name]}{[endlist]}){[endlist]}.'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const result = evaluate(data_Children)
           assert.strictEqual(result, 'Children were born in the years 1970 (Alice and John); 2000 (Beth and Yolanda); and 2007 (Eric, Mark and Ted).')
         })
         it('should assemble a document with a primitive list, _index', function () {
           const template = 'Continents:\n\n{[list Continents]}\n * {[this]} (#{[_index]} on {[Planet]})\n{[endlist]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const data = {
             Planet: 'Earth',
             Continents: ['Africa', 'Asia', 'Europe', 'North America', 'South America', 'Antarctica', 'Australia/Oceania']
@@ -345,7 +345,7 @@ describe("tinql.templater", function() {
         })
         it('should assemble a document with a list of wrapped primitives', function () {
           const template = '{[list Continents|sort:-SurfaceArea]}\n{[this]}\n{[endlist]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const data = {
             ContinentData: [{
               Name: 'Africa',
@@ -386,7 +386,7 @@ describe("tinql.templater", function() {
 {[list Continents|filter:!this.startsWith("A")]}
  * {[this]} ({[list Oceans|filter:Name.startsWith("A")]}{[_index]}. {[Name]} in {[_parent]}, {[endlist]})
 {[endlist]}`
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const result = evaluate(data_Planet)
           assert.strictEqual(result,
 `Continents:
@@ -402,7 +402,7 @@ describe("tinql.templater", function() {
 {[list Oceans|filter:Name.startsWith("A")]}
  * {[Name]} ({[list Continents|filter:!this.startsWith("A")]}{[_index]}. {[this]} in {[_parent.Name]}, {[endlist]})
 {[endlist]}`
-          const evaluate = tinql.compileTemplate(template)
+          const evaluate = tinq.compileTemplate(template)
           const result = evaluate(data_Planet)
           assert.strictEqual(result,
 `Oceans:
@@ -413,7 +413,7 @@ describe("tinql.templater", function() {
         })
         it('should assemble a (simple) full name template', function () {
           const template = '{[ClientFirstName]} {[ClientMiddleName?ClientMiddleName + " ":""]}{[ClientLastName]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const data = {
             ClientFirstName: 'John',
             ClientMiddleName: 'Jacob',
@@ -424,7 +424,7 @@ describe("tinql.templater", function() {
         })
         it('should assemble a simple template with local and global scopes', function () {
           const template = '{[First]} {[Middle ? Middle + " " : ""]}{[Last]}'
-          evaluate = tinql.compileTemplate(template)
+          evaluate = tinq.compileTemplate(template)
           const scope = useScope({ Last: 'Smith' }).pushScope({ First: 'John' }) // Last is "global", First is "local"
           const result = evaluate(scope)
           assert.strictEqual(result, 'John Smith')

@@ -80,8 +80,8 @@ function legacyNode (obj) {
 }
 
 export class LogicTreeImporter {
-  constructor (tinql) {
-    this.tinql = tinql
+  constructor (tinq) {
+    this.tinq = tinq
   }
 
   arrayToBlock (nodeArray, type) {
@@ -110,7 +110,7 @@ export class LogicTreeImporter {
   contentField (node) {
     const result = {
       type: AST.ContentField,
-      expression: this.tinql.parseExpression(node.expr),
+      expression: this.tinq.parseExpression(node.expr),
     }
     if (node.id) {
       result.fieldNum = node.id
@@ -135,7 +135,7 @@ export class LogicTreeImporter {
     }
     const result = {
       type: AST.ConditionalField,
-      test: this.tinql.parseExpression(node.expr),
+      test: this.tinq.parseExpression(node.expr),
       consequent,
       alternate,
     }
@@ -156,7 +156,7 @@ export class LogicTreeImporter {
     const content = this.arrayToBlock(node.contentArray, AST.TemplateBlock)
     const result = {
       type: AST.ListField,
-      expression: this.tinql.parseExpression(node.expr),
+      expression: this.tinq.parseExpression(node.expr),
       content,
     }
     if (node.id) {

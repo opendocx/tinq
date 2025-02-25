@@ -1,14 +1,15 @@
 import { isConstant, isDefined, isLiteral, isTruthy, isString, isNumber, getStringValue, ifDefined, plusFn, findConstantExpressions, noop } from "./utils.mjs";
-import { useScope, isScope, ExternalBinary } from "./scope.mjs"
+import { useScope, isScope, ExternalFile } from "./scope.mjs"
 import { AST } from "./ast.mjs";
 import { GetFilter } from "./index.mjs"
 import { DataAggregator } from './dataaggregator.mjs'
 import { v4 as uuidv4 } from 'uuid'
 
 export class DataExtractor {
-  constructor () {
+  constructor (externals = null) {
     this.filters = GetFilter
-    this.indirects = []
+    this.externals = externals || [] // queue of ALL externals encountered in the extraction or its parents
+    this.requires = [] // externals on which this extraction depends (directly)
     this.missing = {}
     this.errors = []
     this.data = new DataAggregator()
@@ -17,7 +18,12 @@ export class DataExtractor {
   assembleData (ast, scope) {
     let evaluator = this.compile(ast)
     evaluator(useScope(scope))
-    return this.data
+    delete this.data.stack
+    const wrapper = new ExternalFile(null, this.data)
+    if (this.requires.length > 0) {
+      wrapper.requires = this.requires.map(e => e.id)
+    }
+    return wrapper
   }
 
   compile (ast) {
@@ -47,6 +53,8 @@ export class DataExtractor {
             .map(fn => fn(scope))
             .join('')
         }
+      case AST.TemplateElement:
+        return noop
       case AST.ContentField:
         expr = AST.serialize(ast.expression)
         key = ast.key || expr
@@ -263,9 +271,11 @@ export class DataExtractor {
       this.missing[expr] = true
       value = this._missingValuePlaceholder(expr, ast)
     } else if (typeof value === 'object') {
-      if (value instanceof ExternalBinary) {
-        this.data.set(ident, this._indirectLookup(value))
+      if (value instanceof ExternalFile) {
+        this.data.set(ident, this._registerExternal(value))
         return
+      //} else if (Array.isArray(value) && value.length && value[0] instanceof ExternalFile) {
+      //  value.forEach(v => this.data.set())
       } else if (value.errors || value.missing) {
         // value is a yatte EvaluationResult, probably because of nested template evaluation
         if (value.missing && value.missing.length > 0) {
@@ -286,15 +296,23 @@ export class DataExtractor {
     }
   }
 
-  _indirectLookup (indirObj) {
-    // see if this indirect has already been encountered/added
-    let indirect = this.indirects.find(ex => ex.isEqualTo(indirObj))
-    if (!indirect) {
-      indirect = new ExternalBinary(indirObj) // { ...indirObj, id: uuidv4() }
-      indirect.id = uuidv4()
-      this.indirects.push(indirect)
+  _lookupExternal (extFile) {
+    // see if this externalFile+data has already been encountered/added
+    return this.externals.find(ex => ex.isEqualTo(extFile))
+  }
+
+  _registerExternal (extFile) {
+    // see if this externalFile+data has already been encountered/added
+    let existing = this._lookupExternal(extFile)
+    if (!existing) {
+      extFile.id = uuidv4() // assign unique ID
+      this.externals.push(extFile)
+      existing = extFile
     }
-    return indirect
+    if (!this.requires.includes(existing)) {
+      this.requires.push(existing)
+    }
+    return existing
   }
 
   _setCondition (ident, value) {

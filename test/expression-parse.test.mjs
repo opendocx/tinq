@@ -8,7 +8,7 @@ chai.config.includeStack = true;
 
 describe('Parsing expressions ', function () {
 
-  const tinql = new Tinq({includeLocation: true})
+  const tinq = new Tinq({includeLocation: true})
 
   describe('via exported API', function () {
     // it('should reuse a compiled expression rather than re-compiling it', function () {
@@ -18,7 +18,7 @@ describe('Parsing expressions ', function () {
     // })
 
     it('should correctly categorize the outcomes of a conditional expression', function () {
-      const ast = tinql.parseExpression('test ? consequent : alternative')
+      const ast = tinq.parseExpression('test ? consequent : alternative')
       const normalized = AST.serialize(ast)
       assert.deepStrictEqual(normalized, 'test?consequent:alternative')
       assert.deepStrictEqual(ast, {
@@ -50,25 +50,25 @@ describe('Parsing expressions ', function () {
     it('re-compiling a normalized list filter expression produces the same normalization but does not go back to original AST', function () {
       // note: compiling a normalized list filter expression should produce the same AST as the original (non-normalized) list filter expression
       // we do this so downline features that depend on the AST can reliably know what they're going to get.
-      tinql.cache = {}
+      tinq.cache = {}
       const expr = ' Families|any: Children|any: Birthdate > currentDate' // space at beginning is intentional, to avoid cached expression AST
-      tinql.expressioner.options.includeLocation = false
-      const ast = tinql.parseExpression(expr)
+      tinq.expressioner.options.includeLocation = false
+      const ast = tinq.parseExpression(expr)
       const normalized = AST.serialize(ast)
       // const ast = compiler.parse(expr)
-      tinql.expressioner.options.includeLocation = true
+      tinq.expressioner.options.includeLocation = true
       assert.deepStrictEqual(normalized, 'Families|any:Children|any:Birthdate>currentDate')
       assert.deepStrictEqual(ast, ListFilterAST)
     })
 
     it('correctly normalizes an expression with functions and this', function () {
-      const ast = tinql.parseExpression('[].concat(Client, Spouse, Children)|filter: this')
+      const ast = tinq.parseExpression('[].concat(Client, Spouse, Children)|filter: this')
       const normalized = AST.serialize(ast)
       assert.deepStrictEqual(normalized, '[].concat(Client,Spouse,Children)|filter:this')
     })
 
     it('correctly parses array concatenation and filtering out falsy values', function () {
-      const ast = tinql.parseExpression('[].concat(Client, Spouse, Children)|filter:this')
+      const ast = tinq.parseExpression('[].concat(Client, Spouse, Children)|filter:this')
       assert.deepStrictEqual(ast, {
         type: 'FilterExpression',
         input: {
@@ -98,9 +98,9 @@ describe('Parsing expressions ', function () {
     })
 
     it('allow chaining of "any" filter (and/or its "some" alias)', function () {
-      tinql.expressioner.options.includeLocation = false
-      const ast = tinql.parseExpression('Families | some: Children|any: Birthdate > currentDate')
-      tinql.expressioner.options.includeLocation = true
+      tinq.expressioner.options.includeLocation = false
+      const ast = tinq.parseExpression('Families | some: Children|any: Birthdate > currentDate')
+      tinq.expressioner.options.includeLocation = true
       const normalized = AST.serialize(ast)
       assert.deepStrictEqual(normalized, 'Families|any:Children|any:Birthdate>currentDate')
       assert.deepStrictEqual(ast, ListFilterAST)
@@ -138,17 +138,17 @@ describe('Parsing expressions ', function () {
     }
 
     it('allow chaining of the "any" filter with nested objects', function () {
-      tinql.expressioner.options.includeLocation = false
-      const ast = tinql.parseExpression('obj1.list1|any:obj2.list2|any:prop3')
+      tinq.expressioner.options.includeLocation = false
+      const ast = tinq.parseExpression('obj1.list1|any:obj2.list2|any:prop3')
       const normalized = AST.serialize(ast)
-      tinql.expressioner.options.includeLocation = true
+      tinq.expressioner.options.includeLocation = true
       assert.deepStrictEqual(normalized, 'obj1.list1|any:obj2.list2|any:prop3')
       assert.deepStrictEqual(ast, nestedAny_AST)
       // ensure the normalized expression produces the same AST but does not get recompiled!
-      tinql.expressioner.options.includeLocation = false
-      const ast2 = tinql.parseExpression(' ' + normalized)
+      tinq.expressioner.options.includeLocation = false
+      const ast2 = tinq.parseExpression(' ' + normalized)
       const normalized2 = AST.serialize(ast2)
-      tinql.expressioner.options.includeLocation = true
+      tinq.expressioner.options.includeLocation = true
       assert.deepStrictEqual(ast2, ast)
       assert.deepStrictEqual(normalized2, normalized)
     })
@@ -207,7 +207,7 @@ describe('Parsing expressions ', function () {
   //   })
 
     it('correctly serializes grouping in nested conditionals (grouping needed)', function () {
-      const ast = tinql.parseExpression(`a
+      const ast = tinq.parseExpression(`a
         ? b
           ? (c|map:C)
           : (d|map:D)
@@ -217,7 +217,7 @@ describe('Parsing expressions ', function () {
     })
 
     it('correctly serializes grouping in nested conditionals (complex)', function () {
-      const ast = tinql.parseExpression(`
+      const ast = tinq.parseExpression(`
         (a ? b : c)
           ? (
             d
@@ -234,76 +234,76 @@ describe('Parsing expressions ', function () {
     })
 
     it('correctly serializes grouping in object literals (grouping needed)', function () {
-      const ast = tinql.parseExpression('{ a: a, b: (b|map:B) }')
+      const ast = tinq.parseExpression('{ a: a, b: (b|map:B) }')
       const normalized = AST.serialize(ast)
       assert.deepStrictEqual(normalized, '{a:a,b:(b|map:B)}')
     })
 
     it('correctly serializes grouping in array elements (grouping needed)', function () {
-      const ast = tinql.parseExpression('[ a, (b|format:"9") ]')
+      const ast = tinq.parseExpression('[ a, (b|format:"9") ]')
       const normalized = AST.serialize(ast)
       assert.deepStrictEqual(normalized, '[a,(b|format:"9")]')
     })
 
     it('correctly serializes grouping in array elements (2)', function () {
-      const ast = tinql.parseExpression('[ (b|format:"9") ]')
+      const ast = tinq.parseExpression('[ (b|format:"9") ]')
       const normalized = AST.serialize(ast)
       assert.deepStrictEqual(normalized, '[(b|format:"9")]')
     })
 
     it('correctly serializes grouping in function calls (grouping needed)', function () {
-      const ast = tinql.parseExpression('a.func((b|map: B))')
+      const ast = tinq.parseExpression('a.func((b|map: B))')
       const normalized = AST.serialize(ast)
       assert.deepStrictEqual(normalized, 'a.func((b|map:B))')
     })
 
     it('correctly serializes grouping in function calls (2)', function () {
-      const ast = tinql.parseExpression('a.func((b|map: B), c)')
+      const ast = tinq.parseExpression('a.func((b|map: B), c)')
       const normalized = AST.serialize(ast)
       assert.deepStrictEqual(normalized, 'a.func((b|map:B),c)')
     })
 
     it('correctly serializes grouping in function calls (3)', function () {
-      const ast = tinql.parseExpression('(a|map: A).func(b)')
+      const ast = tinq.parseExpression('(a|map: A).func(b)')
       const normalized = AST.serialize(ast)
       assert.deepStrictEqual(normalized, '(a|map:A).func(b)')
     })
 
     it('correctly normalizes chained list filters', function () {
-      const ast = tinql.parseExpression('a|map:b|map:c') // no parens, so how-ever it gets parsed initially,
+      const ast = tinq.parseExpression('a|map:b|map:c') // no parens, so how-ever it gets parsed initially,
       assert.strictEqual(ast.input.input.name, 'a')
       const normalized = AST.serialize(ast) // the serialized output should also not have parentheses
       assert.deepStrictEqual(normalized, 'a|map:b|map:c')
     })
 
     it('correctly normalizes and serializes nested list filters (1)', function () {
-      const ast = tinql.parseExpression('a|map:(b|map:c)') // map is LTR, so parens change the parsed structure
+      const ast = tinq.parseExpression('a|map:(b|map:c)') // map is LTR, so parens change the parsed structure
       assert.strictEqual(ast.input.name, 'a', "Parse fail")
       const normalized = AST.serialize(ast) // must retain parentheses!
       assert.deepStrictEqual(normalized, 'a|map:(b|map:c)', "Serialization fail")
     })
 
     it('correctly normalizes and serializes nested list filters (2)', function () {
-      const ast = tinql.parseExpression('(a|map:b)|map:c') // map is LTR, so these parens do NOT change parsed structure
+      const ast = tinq.parseExpression('(a|map:b)|map:c') // map is LTR, so these parens do NOT change parsed structure
       const normalized = AST.serialize(ast) // ... and they are not created during re-serialization
       assert.deepStrictEqual(normalized, 'a|map:b|map:c', "Bad normalization")
     })
 
     it('correctly normalizes and serializes chained rtl list filters', function () {
-      const ast = tinql.parseExpression('a|any:b|any:c') // no parens, so how-ever it gets parsed initially
+      const ast = tinq.parseExpression('a|any:b|any:c') // no parens, so how-ever it gets parsed initially
       assert.strictEqual(ast.input.name, 'a', "Parse fail") // // (which will be different from |map, because |any is RTL)
       const normalized = AST.serialize(ast) // the serialized output should also not have parentheses
       assert.deepStrictEqual(normalized, 'a|any:b|any:c', "Bad normalization")
     })
 
     it('correctly normalizes and serializes nested rtl list filters (1)', function () {
-      const ast = tinql.parseExpression('a|any:(b|any:c)') // any is RTL, so same as with no parens
+      const ast = tinq.parseExpression('a|any:(b|any:c)') // any is RTL, so same as with no parens
       const normalized = AST.serialize(ast)
       assert.deepStrictEqual(normalized, 'a|any:b|any:c', "Bad normalization")
     })
 
     it('correctly normalizes and serializes nested rtl list filters (2)', function () {
-      const ast = tinql.parseExpression('(a|any:b)|any:c') // even though this expr is nonsensical, it should still parse
+      const ast = tinq.parseExpression('(a|any:b)|any:c') // even though this expr is nonsensical, it should still parse
       assert.strictEqual(ast.input.input.name, 'a', "Parse fail")
       assert.strictEqual(ast.input.arguments[0].expression.name, 'b', "Parse fail")
       assert.strictEqual(ast.arguments[0].expression.name, 'c', "Parse fail")
@@ -312,7 +312,7 @@ describe('Parsing expressions ', function () {
     })
 
     it('correctly normalizes and serializes an ugly nested mess', function () {
-      const ast = tinql.parseExpression('a|map:b|any:c|map:d|any:e|map:f') // map is LTR, any is RTL
+      const ast = tinq.parseExpression('a|map:b|any:c|map:d|any:e|map:f') // map is LTR, any is RTL
       // but because no RTLs are adjacent to other RTLs, the RTL doesn't do anything and it's all
       // stacked up the same as if everything were LTR
       assert.strictEqual(ast.filter.name, 'map')
@@ -328,7 +328,7 @@ describe('Parsing expressions ', function () {
     })
 
     it('correctly normalizes and serializes an uglier nesteder mess', function () {
-      const ast = tinql.parseExpression('a|map:b|map:c|any:d|any:e|any:f') // map is LTR, any is RTL
+      const ast = tinq.parseExpression('a|map:b|map:c|any:d|any:e|any:f') // map is LTR, any is RTL
       assert.strictEqual(ast.filter.name, 'any')
       assert.strictEqual(ast.input.input.input.name, 'a')
       assert.strictEqual(ast.input.input.arguments[0].expression.name, 'b')
@@ -341,7 +341,7 @@ describe('Parsing expressions ', function () {
     })
 
     it('correctly normalizes and serializes parentheses in messy list filter chains', function () {
-      const ast = tinql.parseExpression('a|map:(b|map:(c|any:d))|any:e|any:f') // map is LTR, any is RTL
+      const ast = tinq.parseExpression('a|map:(b|map:(c|any:d))|any:e|any:f') // map is LTR, any is RTL
       assert.strictEqual(ast.filter.name, 'any')
       assert.strictEqual(ast.input.input.name, 'a')
       assert.strictEqual(ast.input.arguments[0].expression.input.name, 'b')

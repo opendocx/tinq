@@ -1,10 +1,10 @@
 'use strict';
 
 require('node:assert');
+var equal = require('fast-deep-equal');
 var dateFns = require('date-fns');
 var numeral = require('numeral');
 var numWords = require('number-to-words-en');
-var deepEqual = require('fast-deep-equal');
 var uuid = require('uuid');
 
 class AST {
@@ -1980,12 +1980,20 @@ let Scope$1 = class Scope {
     let result = this.value[ident];
     if (typeof result === 'function' && result.ast) {
       result = result.apply(undefined, [this]);
+      // the following would cause all text-based ExternalFiles to auto-compose, but we don't want this here.
+      // if (result instanceof ExternalFile && typeof result.data !== 'object') {
+      //   result = result.data
+      // }
     }
     return result
   }
 
   setOwnValue (ident, value, ns) {
     this.value[ident] = value;
+  }
+
+  root () {
+    return this._parent ? this._parent.root() : this
   }
 
   isNull () {
@@ -2081,364 +2089,353 @@ function parseListExample (example) {
   }
 }
 
-// An instance of ExternalBinary represents an external file or BLOB that
+// An instance of ExternalFile represents an external file or BLOB that
 // (1) TINQ does not know how to create (hence "External"... TINQ only does text)
 // (2) CAN be created dynamically by some other, (again) external, code
 // (3) needs data from inside TINQ's scope to produce this external file
 // (4) (optionally) needs to composite this external output with other output ALSO being created by TINQ
-class ExternalBinary {
-  constructor (props, scope, contentType = '') {
-    for (const [key, value] of Object.entries(props)) {
-      this[key] = value;
-    }
-    if (scope || !('scope' in this)) {
-      this.scope = scope;
-    }
-    // contentType is inherited from props (if it's there) or it can be explicitly specified
-    // contentType should be 'text', 'markdown', or 'docx' (for indirects using opendocx)
-    if (contentType || !('contentType' in this)) {
-      this.contentType = contentType;
+class ExternalFile {
+  constructor (template, data) {
+    this.template = template;
+    if (data || !('data' in this)) {
+      this.data = data;
     }
   }
 
   isEqualTo (that) {
     // compare based on enumeration of that's properties instead of this,
     // because we want to match if that has no "id" property even if this does!
-    return Object
-      .keys(that)
-      .every(propName => {
-        const indPropVal = that[propName];
-        return (indPropVal && (indPropVal instanceof Scope$1))
-          ? indPropVal.valueEqualTo(this[propName])
-          : indPropVal === this[propName]
-      })
+    return equal(that.template, this.template) && equal(that.data, this.data)
   }
 
-  // toString () {} // When an ExternalBinary is encountered during (synchronous) text-based assembly,
-  //                // toString() is called on the instance in order to retrieve a text representation. (maybe)
-  //                // In (async) docx-based assembly, encountering an indirect causes a special
-  //                // placeholder to be inserted so the resulting files can be composed later.
+  toString () {
+    // When an ExternalFile is encountered during (synchronous) text-based assembly,
+    // it is converted to a string (by adding "") to retrieve a text representation.
+    return this.data + ''
+    // In (async) docx-based assembly, encountering an indirect causes a special
+    // placeholder to be inserted so the resulting files can be composed later.
+  }
 }
 
 class ASTInterpreter {
-	constructor (filters) {
-		this.filters = filters;
-	}
+  constructor (filters) {
+    this.filters = filters;
+  }
 
-	compile (ast) {
-		const self = this;
-		if (ast) {
-			findConstantExpressions(ast, self.filters);
-			// let assignable
-			// let assign
-			// if ((assignable = assignableAST(ast))) {
-			// 	assign = this.recurse(assignable)
-			// }
-		}
-		// const toWatch = getInputs(astProg.body)
-		// let inputs
-		// if (toWatch) {
-		// 	inputs = []
-		// 	toWatch.forEach((watch, key) => {
-		// 		const input = self.recurse(watch)
-		// 		watch.winput = input
-		// 		inputs.push(input)
-		// 		watch.watchId = key
-		// 	})
-		// }
-		let fn = self.recurse(ast);
-		// if (!ast || (ast.type === AST.Program && !ast.body.length)) { // special case
-		// 	fn = noop
-		// } else if (ast.type === AST.Program) { // it's a template AST, so compile the template
-		// 	const expressions = []
-		// 	ast.body.forEach(elem => {
-		// 		expressions.push(elem.type === AST.TemplateElement ? elem : self.recurse(elem.expression))
-		// 	})
-		// 	fn = function (scope) {
-		// 		let results = expressions.map(exp => exp(scope))
-		// 		return results.join()
-		// 	}
-		// } else { // it's just an expression AST, so compile the expression
-		// 	fn = self.recurse(ast)
-		// }
-		// if (assign) {
-		// 	fn.assign = function (scope, value) {
-		// 		return assign(scope, value)
-		// 	}
-		// }
-		// if (inputs) {
-		// 	fn.inputs = inputs
-		// }
-		fn.ast = ast;
-		if (ast) {
-			fn.literal = isLiteral(ast);
-			fn.constant = isConstant(ast);
-		}
-		return fn
-	}
+  compile (ast) {
+    const self = this;
+    if (ast) {
+      findConstantExpressions(ast, self.filters);
+      // let assignable
+      // let assign
+      // if ((assignable = assignableAST(ast))) {
+      // 	assign = this.recurse(assignable)
+      // }
+    }
+    // const toWatch = getInputs(astProg.body)
+    // let inputs
+    // if (toWatch) {
+    // 	inputs = []
+    // 	toWatch.forEach((watch, key) => {
+    // 		const input = self.recurse(watch)
+    // 		watch.winput = input
+    // 		inputs.push(input)
+    // 		watch.watchId = key
+    // 	})
+    // }
+    let fn = self.recurse(ast);
+    // if (!ast || (ast.type === AST.Program && !ast.body.length)) { // special case
+    // 	fn = noop
+    // } else if (ast.type === AST.Program) { // it's a template AST, so compile the template
+    // 	const expressions = []
+    // 	ast.body.forEach(elem => {
+    // 		expressions.push(elem.type === AST.TemplateElement ? elem : self.recurse(elem.expression))
+    // 	})
+    // 	fn = function (scope) {
+    // 		let results = expressions.map(exp => exp(scope))
+    // 		return results.join()
+    // 	}
+    // } else { // it's just an expression AST, so compile the expression
+    // 	fn = self.recurse(ast)
+    // }
+    // if (assign) {
+    // 	fn.assign = function (scope, value) {
+    // 		return assign(scope, value)
+    // 	}
+    // }
+    // if (inputs) {
+    // 	fn.inputs = inputs
+    // }
+    fn.ast = ast;
+    if (ast) {
+      fn.literal = isLiteral(ast);
+      fn.constant = isConstant(ast);
+    }
+    return fn
+  }
 
-	recurse (ast, wantScope, create) {
-		if (!ast) return noop
-		const self = this;
-		let left, right, args, expression;
-		// if (ast.winput) {
-		// 	return this.inputs(ast.winput, ast.watchId)
-		// }
-		switch (ast.type) {
-			case AST.Program:
-			case AST.TemplateBlock:
-				args = ast.body.map(elem => self.recurse(elem));
-				return function template_block (scope) {
-					return args
-						.map(fn => fn(scope))
-						.join('')
-				}
-			case AST.TemplateElement:
-				return () => ast.text //this.staticText(ast.text)
-			case AST.ContentField:
-				right = this.recurse(ast.expression);
-				return function content_field (scope) {
-					return right(scope) + ""
-				}
-			case AST.ConditionalField:
-				expression = this.recurse(ast.test);
-				left = this.recurse(ast.consequent);
-				right = ast.alternate && this.recurse(ast.alternate);
-				return function conditional_field (scope, assign, inputs) {
-					const value = expression(scope, assign, inputs)
-						? left(scope, assign, inputs)
-						: (right ? right(scope, assign, inputs) : '');
-					return value
-				}
-			case AST.ListField:
-				expression = this.recurse(ast.expression, true);
-				right = this.recurse(ast.content); // in essence a lambda
-				return function list_field (scope) {
-					const exprListScope = expression(scope);
-					if (exprListScope && exprListScope.length) {
-						const results = [];
-						exprListScope.forEachScope(enumScope => {
-							results.push(right.call(undefined, enumScope));
-						});
-						return results.join('')
-					}
-					return ''
-				}
-			case AST.Literal:
-				return () => ast.value
-			case AST.UnaryExpression:
-				right = this.recurse(ast.argument);
-				return function unary_op (scope, assign, inputs) {
-					let result = right(scope, assign, inputs);
-					if (ast.operator === '!') return !result
-					if (isDefined(result)) return ast.operator === '-' ? -result : +result
-					return 0
-				}
-			case AST.BinaryExpression:
-				left = this.recurse(ast.left);
-				right = this.recurse(ast.right);
-				return function binary_op (scope, assign, inputs) {
-					const lhs = left(scope, assign, inputs);
-					const rhs = right(scope, assign, inputs);
-					switch (ast.operator) {
-						case '+': return plusFn(lhs, rhs)
-						case '-': return (isDefined(lhs) ? lhs : 0) - (isDefined(rhs) ? rhs : 0)
-						case '*': return lhs * rhs
-						case '/': return lhs / rhs
-						case '%': return lhs % rhs
-						case '===': return lhs === rhs
-						case '!==': return lhs !== rhs
-						case '==': return lhs == rhs
-						case '!=': return lhs != rhs
-						case '<': return lhs < rhs
-						case '>': return lhs > rhs
-						case '<=': return lhs <= rhs
-						case '>=': return lhs >= rhs
-					}
-				}
-			case AST.LogicalExpression:
-				left = this.recurse(ast.left);
-				right = this.recurse(ast.right);
-				return function logical_op (scope, assign, inputs) {
-					const lhs = left(scope, assign, inputs);
-					switch (ast.operator) {
-						case '&&': return lhs && right(scope, assign, inputs)
-						case '||': return lhs || right(scope, assign, inputs)
-					}
-				}
-			case AST.ConditionalExpression:
-				expression = this.recurse(ast.test);
-				left = this.recurse(ast.consequent);
-				right = this.recurse(ast.alternate);
-				return function ternary_op (scope, assign, inputs) {
-					return expression(scope, assign, inputs)
-						? left(scope, assign, inputs)
-						: right(scope, assign, inputs)
-				}
-			case AST.Identifier:
-				if (self.stage === 'inputs') throw "error: this has been broken for inputs"
-				return function identifier_ (scope, assign, inputs) {
-					const c = useScope(scope);
-					let value;
-					if (wantScope || (create && create !== 1)) {
-						value = c.lookupScope(ast.name, ast.ns);
-						if (create && create !== 1) {
-							if (value.isNull() && value._parent) {
-								value._parent.setOwnValue(ast.name, {}, ast.ns);
-								value = wantScope
-								  ? value._parent.getOwnScope(ast.name)
-									: value._parent.getOwnValue(ast.name);
-							}
-						}
-					} else {
-						value = c.lookupValue(ast.name, ast.ns);
-					}
-					return value
-				}
-			case AST.MemberExpression:
-				left = this.recurse(ast.object, true, !!create);
-				if (ast.computed) {
-					right = this.recurse(ast.property);
-					return function member_computed (scope, assign, inputs) {
-						const lhs = left(scope, assign, inputs);
-						const rhs = right(scope, assign, inputs);
-						if (create && create !== 1) {
-							if (lhs.getOwnValue(rhs) == null) {
-								lhs.setOwnValue(rhs, {});
-							}
-						}
-						return wantScope
-							? lhs.getOwnScope(rhs)
-							: lhs.getOwnValue(rhs)
-					}
-				} else { // !ast.computed
-					const propName = ast.property.name;
-					return function member_named (scope, assign, inputs) {
-						const lhs = left(scope, assign, inputs);
-						if (create && create !== 1) { // when create===1 that means we're called by an assignment so no need to create
-							if (lhs.getOwnValue(propName) == null) {
-								lhs.setOwnValue(propName, {});
-							}
-						}
-						return wantScope
-							? lhs.getOwnScope(propName)
-							: lhs.getOwnValue(propName)
-					}
-				}
-			case AST.CallExpression:
-				args = [];
-				right = this.recurse(ast.callee, true);
-				ast.arguments.forEach(expr => {
-					args.push(self.recurse(expr));
-				});
-				return function call_expr (scope, assign, inputs) {
-					const rhs = right(scope, assign, inputs);
-					let value;
-					if (rhs != null) {
-						const argValues = args.map(arg => arg(scope, assign, inputs));
-						value = rhs.valueOf().apply(rhs._parent.valueOf(), argValues);
-					}
-					return value
-				}
-			case AST.FilterExpression:
-				right = this.filters(ast.filter.name);
-				// Filters are implemented as functions, retrieved from this.filters().
-				// These functions expect the first argument to be the INPUT to the filter.
-				// ARGUMENTS to the filter (if any) are passed as SUBSEQUENT arguments to this function. 
-				args = []; // (for the filter function to be called)
-				args.push(self.recurse(ast.input, ast.lambda)); // for list filters, we need the filter input's context!
-				ast.arguments.forEach(expr => {
-					args.push(self.recurse(expr));
-				});
-				return function filter_expr (scope, assign, inputs) {
-					const argValues = args.map(arg => arg(scope, assign, inputs));
-					const value = right.apply(undefined, argValues, inputs); // bug/question (inherited from angular-expressions): does 3rd argument to apply() actually DO anything?  (it's not documented anywhere I have found!)
-					return wantScope
-						? useScope(scope).pushScope(value)
-						: value
-				}
-			case AST.LambdaExpression:
-				right = self.recurse(ast.expression);
-				return function lambda_expr () { return right }
-			case AST.SortKeyExpression:
-				right = self.recurse(ast.key);
-				if (ast.descending) {
-					right.descending = true;
-				}
-				return function sort_key () { return right }
-			case AST.AssignmentExpression:
-				left = this.recurse(ast.left, true, 1);
-				right = this.recurse(ast.right);
-				return function assign_expr (scope, assign, inputs) {
-					const lhs = left(scope, assign, inputs); // need to call because this is what actually determines context!
-					if (lhs._parent && lhs.name) {
-						const rhs = right(scope, assign, inputs);
-						lhs._parent.setOwnValue(lhs.name, rhs, ast.ns);
-						// todo: shouldn't we be checking contextOut here and returning a scope if requested?
-						return lhs._parent.getOwnValue(lhs.name) // should === rhs but just to be sure
-					}
-				}
-			case AST.ArrayExpression:
-				args = [];
-				ast.elements.forEach(expr => {
-					args.push(self.recurse(expr));
-				});
-				return function array_expr (scope, assign, inputs) {
-					const value = args.map(arg => arg(scope, assign, inputs));
-					return wantScope
-					  ? useScope(scope).pushScope(value)
-						: value
-				}
-			case AST.ObjectExpression:
-				args = [];
-				ast.properties.forEach(property => {
-					if (property.computed) {
-						args.push({
-							key: self.recurse(property.key),
-							computed: true,
-							value: self.recurse(property.value),
-						});
-					} else {
-						args.push({
-							key: property.key.type === AST.Identifier ? property.key.name : property.key.value + '',
-							computed: false,
-							value: self.recurse(property.value),
-						});
-					}
-				});
-				return function object_expr (scope, assign, inputs) {
-					const value = {};
-					for (const arg of args) {
-						if (arg.computed) {
-							value[arg.key(scope, assign, inputs)] = arg.value(scope, assign, inputs);
-						} else {
-							value[arg.key] = arg.value(scope, assign, inputs);
-						}
-					}
-					return wantScope
-						? scope.pushScope(value)
-					 	: value
-				}
-			case AST.ThisExpression:
-				return function this_expr (scope) {
-					const c = useScope(scope);
-					return wantScope
-					  ? c
-						: c.valueOf()
-				}
-			case AST.NGValueParameter:
-				return function (scope, assign) {
-					return assign
-				}
-		}
-	}
+  recurse (ast, wantScope, create) {
+    if (!ast) return noop
+    const self = this;
+    let left, right, args, expression;
+    // if (ast.winput) {
+    // 	return this.inputs(ast.winput, ast.watchId)
+    // }
+    switch (ast.type) {
+      case AST.Program:
+      case AST.TemplateBlock:
+        args = ast.body.map(elem => self.recurse(elem));
+        return function template_block (scope) {
+          return args
+            .map(fn => fn(scope))
+            .join('')
+        }
+      case AST.TemplateElement:
+        return () => ast.text //this.staticText(ast.text)
+      case AST.ContentField:
+        right = this.recurse(ast.expression);
+        return function content_field (scope) {
+          return right(scope) + ""
+        }
+      case AST.ConditionalField:
+        expression = this.recurse(ast.test);
+        left = this.recurse(ast.consequent);
+        right = ast.alternate && this.recurse(ast.alternate);
+        return function conditional_field (scope, assign, inputs) {
+          const value = expression(scope, assign, inputs)
+            ? left(scope, assign, inputs)
+            : (right ? right(scope, assign, inputs) : '');
+          return value
+        }
+      case AST.ListField:
+        expression = this.recurse(ast.expression, true);
+        right = this.recurse(ast.content); // in essence a lambda
+        return function list_field (scope) {
+          const exprListScope = expression(scope);
+          if (exprListScope && exprListScope.length) {
+            const results = [];
+            exprListScope.forEachScope(enumScope => {
+              results.push(right.call(undefined, enumScope));
+            });
+            return results.join('')
+          }
+          return ''
+        }
+      case AST.Literal:
+        return () => ast.value
+      case AST.UnaryExpression:
+        right = this.recurse(ast.argument);
+        return function unary_op (scope, assign, inputs) {
+          let result = right(scope, assign, inputs);
+          if (ast.operator === '!') return !result
+          if (isDefined(result)) return ast.operator === '-' ? -result : +result
+          return 0
+        }
+      case AST.BinaryExpression:
+        left = this.recurse(ast.left);
+        right = this.recurse(ast.right);
+        return function binary_op (scope, assign, inputs) {
+          const lhs = left(scope, assign, inputs);
+          const rhs = right(scope, assign, inputs);
+          switch (ast.operator) {
+            case '+': return plusFn(lhs, rhs)
+            case '-': return (isDefined(lhs) ? lhs : 0) - (isDefined(rhs) ? rhs : 0)
+            case '*': return lhs * rhs
+            case '/': return lhs / rhs
+            case '%': return lhs % rhs
+            case '===': return lhs === rhs
+            case '!==': return lhs !== rhs
+            case '==': return lhs == rhs
+            case '!=': return lhs != rhs
+            case '<': return lhs < rhs
+            case '>': return lhs > rhs
+            case '<=': return lhs <= rhs
+            case '>=': return lhs >= rhs
+          }
+        }
+      case AST.LogicalExpression:
+        left = this.recurse(ast.left);
+        right = this.recurse(ast.right);
+        return function logical_op (scope, assign, inputs) {
+          const lhs = left(scope, assign, inputs);
+          switch (ast.operator) {
+            case '&&': return lhs && right(scope, assign, inputs)
+            case '||': return lhs || right(scope, assign, inputs)
+          }
+        }
+      case AST.ConditionalExpression:
+        expression = this.recurse(ast.test);
+        left = this.recurse(ast.consequent);
+        right = this.recurse(ast.alternate);
+        return function ternary_op (scope, assign, inputs) {
+          return expression(scope, assign, inputs)
+            ? left(scope, assign, inputs)
+            : right(scope, assign, inputs)
+        }
+      case AST.Identifier:
+        if (self.stage === 'inputs') throw "error: this has been broken for inputs"
+        return function identifier_ (scope, assign, inputs) {
+          const c = useScope(scope);
+          let value;
+          if (wantScope || (create && create !== 1)) {
+            value = c.lookupScope(ast.name, ast.ns);
+            if (create && create !== 1) {
+              if (value.isNull() && value._parent) {
+                value._parent.setOwnValue(ast.name, {}, ast.ns);
+                value = wantScope
+                  ? value._parent.getOwnScope(ast.name)
+                  : value._parent.getOwnValue(ast.name);
+              }
+            }
+          } else {
+            value = c.lookupValue(ast.name, ast.ns);
+          }
+          return value
+        }
+      case AST.MemberExpression:
+        left = this.recurse(ast.object, true, !!create);
+        if (ast.computed) {
+          right = this.recurse(ast.property);
+          return function member_computed (scope, assign, inputs) {
+            const lhs = left(scope, assign, inputs);
+            const rhs = right(scope, assign, inputs);
+            if (create && create !== 1) {
+              if (lhs.getOwnValue(rhs) == null) {
+                lhs.setOwnValue(rhs, {});
+              }
+            }
+            return wantScope
+              ? lhs.getOwnScope(rhs)
+              : lhs.getOwnValue(rhs)
+          }
+        } else { // !ast.computed
+          const propName = ast.property.name;
+          return function member_named (scope, assign, inputs) {
+            const lhs = left(scope, assign, inputs);
+            if (create && create !== 1) { // when create===1 that means we're called by an assignment so no need to create
+              if (lhs.getOwnValue(propName) == null) {
+                lhs.setOwnValue(propName, {});
+              }
+            }
+            return wantScope
+              ? lhs.getOwnScope(propName)
+              : lhs.getOwnValue(propName)
+          }
+        }
+      case AST.CallExpression:
+        args = [];
+        right = this.recurse(ast.callee, true);
+        ast.arguments.forEach(expr => {
+          args.push(self.recurse(expr));
+        });
+        return function call_expr (scope, assign, inputs) {
+          const rhs = right(scope, assign, inputs);
+          let value;
+          if (rhs != null) {
+            const argValues = args.map(arg => arg(scope, assign, inputs));
+            value = rhs.valueOf().apply(rhs._parent.valueOf(), argValues);
+          }
+          return value
+        }
+      case AST.FilterExpression:
+        right = this.filters(ast.filter.name);
+        // Filters are implemented as functions, retrieved from this.filters().
+        // These functions expect the first argument to be the INPUT to the filter.
+        // ARGUMENTS to the filter (if any) are passed as SUBSEQUENT arguments to this function. 
+        args = []; // (for the filter function to be called)
+        args.push(self.recurse(ast.input, ast.lambda)); // for list filters, we need the filter input's context!
+        ast.arguments.forEach(expr => {
+          args.push(self.recurse(expr));
+        });
+        return function filter_expr (scope, assign, inputs) {
+          const argValues = args.map(arg => arg(scope, assign, inputs));
+          const value = right.apply(undefined, argValues, inputs); // bug/question (inherited from angular-expressions): does 3rd argument to apply() actually DO anything?  (it's not documented anywhere I have found!)
+          return wantScope
+            ? useScope(scope).pushScope(value)
+            : value
+        }
+      case AST.LambdaExpression:
+        right = self.recurse(ast.expression);
+        return function lambda_expr () { return right }
+      case AST.SortKeyExpression:
+        right = self.recurse(ast.key);
+        if (ast.descending) {
+          right.descending = true;
+        }
+        return function sort_key () { return right }
+      case AST.AssignmentExpression:
+        left = this.recurse(ast.left, true, 1);
+        right = this.recurse(ast.right);
+        return function assign_expr (scope, assign, inputs) {
+          const lhs = left(scope, assign, inputs); // need to call because this is what actually determines context!
+          if (lhs._parent && lhs.name) {
+            const rhs = right(scope, assign, inputs);
+            lhs._parent.setOwnValue(lhs.name, rhs, ast.ns);
+            // todo: shouldn't we be checking contextOut here and returning a scope if requested?
+            return lhs._parent.getOwnValue(lhs.name) // should === rhs but just to be sure
+          }
+        }
+      case AST.ArrayExpression:
+        args = [];
+        ast.elements.forEach(expr => {
+          args.push(self.recurse(expr));
+        });
+        return function array_expr (scope, assign, inputs) {
+          const value = args.map(arg => arg(scope, assign, inputs));
+          return wantScope
+            ? useScope(scope).pushScope(value)
+            : value
+        }
+      case AST.ObjectExpression:
+        args = [];
+        ast.properties.forEach(property => {
+          if (property.computed) {
+            args.push({
+              key: self.recurse(property.key),
+              computed: true,
+              value: self.recurse(property.value),
+            });
+          } else {
+            args.push({
+              key: property.key.type === AST.Identifier ? property.key.name : property.key.value + '',
+              computed: false,
+              value: self.recurse(property.value),
+            });
+          }
+        });
+        return function object_expr (scope, assign, inputs) {
+          const value = {};
+          for (const arg of args) {
+            if (arg.computed) {
+              value[arg.key(scope, assign, inputs)] = arg.value(scope, assign, inputs);
+            } else {
+              value[arg.key] = arg.value(scope, assign, inputs);
+            }
+          }
+          return wantScope
+            ? scope.pushScope(value)
+             : value
+        }
+      case AST.ThisExpression:
+        return function this_expr (scope) {
+          const c = useScope(scope);
+          return wantScope
+            ? c
+            : c.valueOf()
+        }
+      case AST.NGValueParameter:
+        return function (scope, assign) {
+          return assign
+        }
+    }
+  }
 
-	// inputs (input, watchId) {
-	// 	return function (scope, value, inputs) {
-	// 		if (inputs) return inputs[watchId]
-	// 		return input(scope, value)
-	// 	}
-	// }
+  // inputs (input, watchId) {
+  // 	return function (scope, value, inputs) {
+  // 		if (inputs) return inputs[watchId]
+  // 		return input(scope, value)
+  // 	}
+  // }
 }
 
 const stringEscapeRegex = /[^ a-zA-Z0-9]/g;
@@ -2450,816 +2447,816 @@ class ASTCompiler {
     this.filters = filters;
   }
 
-	compile (ast) {
-		this.state = {
-			nextId: 0,
-			filters: {},
-			fn: { vars: [], body: [], own: {} },
-			assign: { vars: [], body: [], own: {} },
-			inputs: []
-		};
-		let extra = '';
-		if (ast) {
-			findConstantExpressions(ast, this.filters);
-			this.stage = "lambdas";
-			let index = 0;
-			for (const lnode of FindLambdas(ast)) {
-				const lkey = 'lambda' + ++index;
-				lnode._lkey = lkey;
-				this.state[lkey] = { vars: [], body: [], own: {} };
-				this.state.computing = lkey;
-				// pre-processing for each lambda
-				let rnode, init;
-				if (lnode.type === AST.SortKeyExpression) rnode = lnode.key;
-				else if (lnode.type === AST.LambdaExpression) rnode = lnode.expression;
-				else { // it's a content block inside a list field
-					rnode = lnode;
-					init = '[]';
-				}
-				const lid = this.nextId(false, init);
-				this.recurse(rnode, lid);
-				this.return_(lid);
-			}
-			// let assignable
-			// this.stage = "assign"
-			// if ((assignable = assignableAST(ast))) {
-			// 	this.state.computing = "assign"
-			// 	const result = this.nextId()
-			// 	this.recurse(assignable, result)
-			// 	this.return_(result)
-			// 	extra = "fn.assign=" + this.generateFunction("assign", "s,v")
-			// }
-			// const toWatch = getInputs(ast.body)
-			// self.stage = "inputs"
-			// if (toWatch) {
-			// 	toWatch.forEach((watch, key) => {
-			// 		const fnKey = "fn" + key
-			// 		self.state[fnKey] = { vars: [], body: [], own: {} }
-			// 		self.state.computing = fnKey
-			// 		const intoId = self.nextId()
-			// 		self.recurse(watch, intoId)
-			// 		self.return_(intoId)
-			// 		self.state.inputs.push(fnKey)
-			// 		watch.watchId = key
-			// 	})
-			// }
-		}
-		this.state.computing = "fn";
-		this.stage = "main";
-		if (ast) {
-			this.recurse(ast, undefined, undefined, (intoId) => {
-				this.return_(intoId);
-			});
-		}
-		// The build and minification steps remove the string "use strict" from the code, but this is done using a regex.
-		// This is a workaround for this until we do a better job at only removing the prefix only when we should.
-		const fns = [];
-		append(fns, `"${USE} ${STRICT}"`);
-		append(fns, this.filterPrefix());
-		append(fns, `var fn=${this.generateFunction("fn", "s,a,i")}`);
-		append(fns, extra);
-		append(fns, this.watchFns());
-		append(fns, 'return fn');
-		// eslint-disable-next-line no-new-func
-		const fn = new Function(
-			'flt',
-			'ifd',
-			'pls',
-			'use',
-			fns.join('\n') // last argument to Function() is function body; each prior is an argument name
-		)(this.filters, ifDefined, plusFn, useScope);
+  compile (ast) {
+    this.state = {
+      nextId: 0,
+      filters: {},
+      fn: { vars: [], body: [], own: {} },
+      assign: { vars: [], body: [], own: {} },
+      inputs: []
+    };
+    let extra = '';
+    if (ast) {
+      findConstantExpressions(ast, this.filters);
+      this.stage = "lambdas";
+      let index = 0;
+      for (const lnode of FindLambdas(ast)) {
+        const lkey = 'lambda' + ++index;
+        lnode._lkey = lkey;
+        this.state[lkey] = { vars: [], body: [], own: {} };
+        this.state.computing = lkey;
+        // pre-processing for each lambda
+        let rnode, init;
+        if (lnode.type === AST.SortKeyExpression) rnode = lnode.key;
+        else if (lnode.type === AST.LambdaExpression) rnode = lnode.expression;
+        else { // it's a content block inside a list field
+          rnode = lnode;
+          init = '[]';
+        }
+        const lid = this.nextId(false, init);
+        this.recurse(rnode, lid);
+        this.return_(lid);
+      }
+      // let assignable
+      // this.stage = "assign"
+      // if ((assignable = assignableAST(ast))) {
+      // 	this.state.computing = "assign"
+      // 	const result = this.nextId()
+      // 	this.recurse(assignable, result)
+      // 	this.return_(result)
+      // 	extra = "fn.assign=" + this.generateFunction("assign", "s,v")
+      // }
+      // const toWatch = getInputs(ast.body)
+      // self.stage = "inputs"
+      // if (toWatch) {
+      // 	toWatch.forEach((watch, key) => {
+      // 		const fnKey = "fn" + key
+      // 		self.state[fnKey] = { vars: [], body: [], own: {} }
+      // 		self.state.computing = fnKey
+      // 		const intoId = self.nextId()
+      // 		self.recurse(watch, intoId)
+      // 		self.return_(intoId)
+      // 		self.state.inputs.push(fnKey)
+      // 		watch.watchId = key
+      // 	})
+      // }
+    }
+    this.state.computing = "fn";
+    this.stage = "main";
+    if (ast) {
+      this.recurse(ast, undefined, undefined, (intoId) => {
+        this.return_(intoId);
+      });
+    }
+    // The build and minification steps remove the string "use strict" from the code, but this is done using a regex.
+    // This is a workaround for this until we do a better job at only removing the prefix only when we should.
+    const fns = [];
+    append(fns, `"${USE} ${STRICT}"`);
+    append(fns, this.filterPrefix());
+    append(fns, `var fn=${this.generateFunction("fn", "s,a,i")}`);
+    append(fns, extra);
+    append(fns, this.watchFns());
+    append(fns, 'return fn');
+    // eslint-disable-next-line no-new-func
+    const fn = new Function(
+      'flt',
+      'ifd',
+      'pls',
+      'use',
+      fns.join('\n') // last argument to Function() is function body; each prior is an argument name
+    )(this.filters, ifDefined, plusFn, useScope);
 
-		this.state = this.stage = undefined;
-		fn.ast = ast;
-		if (ast) {
-			fn.literal = isLiteral(ast);
-			fn.constant = isConstant(ast);
-		}
-		return fn
-	}
+    this.state = this.stage = undefined;
+    fn.ast = ast;
+    if (ast) {
+      fn.literal = isLiteral(ast);
+      fn.constant = isConstant(ast);
+    }
+    return fn
+  }
 
-	watchFns () {
-		const result = [];
-		const fns = this.state.inputs; // currently always empty because inputs stage & watch finding is commented out
-		const self = this;
-		fns.forEach(name => {
-			result.push(`var ${name}=${self.generateFunction(name, 's')}`);
-		});
-		if (fns.length) {
-			result.push(`fn.inputs=[${fns.join(',')}];`);
-		}
-		return result.join('')
-	}
+  watchFns () {
+    const result = [];
+    const fns = this.state.inputs; // currently always empty because inputs stage & watch finding is commented out
+    const self = this;
+    fns.forEach(name => {
+      result.push(`var ${name}=${self.generateFunction(name, 's')}`);
+    });
+    if (fns.length) {
+      result.push(`fn.inputs=[${fns.join(',')}];`);
+    }
+    return result.join('')
+  }
 
-	generateFunction (name, params) {
-		return `function(${params}){${this.varsPrefix(name)}${this.funcBody(name)}}`
-	}
+  generateFunction (name, params) {
+    return `function(${params}){${this.varsPrefix(name)}${this.funcBody(name)}}`
+  }
 
-	filterPrefix () {
-		const parts = [];
-		for (const [filter, id] of Object.entries(this.state.filters)) {
-			parts.push(id + '=flt(' + escape(filter) + ')');
-		}
-		if (parts.length) return `var ${parts.join(',')};`
-		return ''
-	}
+  filterPrefix () {
+    const parts = [];
+    for (const [filter, id] of Object.entries(this.state.filters)) {
+      parts.push(id + '=flt(' + escape(filter) + ')');
+    }
+    if (parts.length) return `var ${parts.join(',')};`
+    return ''
+  }
 
-	varsPrefix (section) {
-		return this.state[section].vars.length
-			? `var ${this.state[section].vars.join(',')};`
-			: ''
-	}
+  varsPrefix (section) {
+    return this.state[section].vars.length
+      ? `var ${this.state[section].vars.join(',')};`
+      : ''
+  }
 
-	funcBody (section) {
-		return this.state[section].body.join('')
-	}
+  funcBody (section) {
+    return this.state[section].body.join('')
+  }
 
-	/**
-	 * transpiles the given ast node into JavaScript code that can execute in the browser or NodeJS
-	 * 
-	 * @param {object} ast node
-	 * @param {string} intoId id of the variable (in the target code) in which the result of the current operation should
-	 *                        be stored
-	 * @param {object?} wantScope if the current operation needs to return a Scope object rather than a regular value
-	 * @param {*} returnFn for all expressions and sub-expressions that ultimately compile down to strings (containing
-	 *                        JavaScript), this callback (if specified) is invoked as the last thing after that
-	 *                        compilation is complete. Not currently called for template & field nodes.
-	 * @param {*} create 
-	 * @param {*} skipWatchIdCheck 
-	 * @returns void. The recurse method alters the state of this ASTCompiler instance, such that after the call to
-	 * recurse returns, the generateFunction() method can be used to finish the code generation.
-	 */
-	recurse (ast, intoId, wantScope, returnFn, ckPrefix, create, skipWatchIdCheck) {
-		if (!ast) return // any need to call returnFn() here before returning, or will it always already be noop?
-		const self = this;
-		let left, right, args, expression, key;
-		returnFn = returnFn || noop;
-		if (!skipWatchIdCheck && isDefined(ast.watchId)) {
-			intoId = intoId || this.nextId();
-			this.if_(
-				'i',
-				this.lazyAssignId(intoId, computedMember('i', ast.watchId)),
-				this.lazyRecurse(ast, intoId, wantScope, returnFn, create, true)
-			);
-			return
-		}
-		switch (ast.type) {
-			case AST.Program:
-			case AST.TemplateBlock:
-				intoId = intoId || this.nextId(false, '[]');
-				ast.body.forEach(elem => self.recurse(elem, undefined, undefined, result => {
-					self.pushElement(intoId, result);
-				}));
-				returnFn(this.assignId(intoId, intoId + '.join("")'));
-				break
-			case AST.TemplateElement:
-				returnFn(escape(ast.text));
-				break
-			case AST.ContentField:
-				self.recurse(ast.expression, undefined, undefined, result => {
-					right = result;
-				});
-				right += '+""'; // to string
-				returnFn(right);
-				break
-			case AST.ConditionalField:
-				intoId = intoId || this.nextId();
-				self.recurse(ast.test, intoId, undefined, undefined, 'bool');
-				self.if_(
-					intoId,
-					() => { // consequent can be either a block node or a single
-						if (ast.consequent.type === AST.TemplateBlock) {
-							self.assignId(intoId, '[]');
-							self.recurse(ast.consequent, intoId);
-						} else {
-							self.recurse(ast.consequent, undefined, undefined, result => {
-								self.assignId(intoId, result);
-							});
-						}
-					},
-					ast.alternate && (() => { // alternate, if specified, can be either a block node or a single
-						if (ast.alternate.type === AST.TemplateBlock) {
-							self.assignId(intoId, '[]');
-							self.recurse(ast.alternate, intoId);
-						} else {
-							self.recurse(ast.alternate, undefined, undefined, result => {
-								self.assignId(intoId, result);
-							});
-						}
-					}),
-				);
-				returnFn(intoId);
-				break
-			case AST.ListField:
-				expression = this.nextId(); // the list value itself
-				this.recurse(ast.expression, expression, true); // get list value
-				right = this.assignId(this.nextId(), this.generateFunction(ast.content._lkey, 's')); // list content lambda
-				left = this.nextId(false, ''); // var to hold result of list concatenation
-				this.if_(
-					expression + '&&' + expression + '.length',
-					() => {
-						self.assignId(left, '[]');
-						self.forEachScope(expression, left, right);
-						self.assignId(left, left + '.join("")');
-					}
-				);
-				returnFn(left);
-				break
-			case AST.Literal:
-				expression = escape(ast.value);
-				this.assignId(intoId, expression);
-				returnFn(intoId || expression);
-				break
-			case AST.UnaryExpression:
-				this.recurse(ast.argument, undefined, undefined, expr => {
-					right = expr;
-				});
-				expression = ast.operator + '(' + if_Defined(right, 0) + ')'; // TODO: use precedence to determine whether parens are needed
-				this.assignId(intoId, expression);
-				returnFn(expression);
-				break
-			case AST.BinaryExpression:
-				this.recurse(ast.left, undefined, undefined, expr => left = expr);
-				this.recurse(ast.right, undefined, undefined, expr => right = expr);
-				if (ast.operator === '+') {
-					expression = plus_(left, right);
-				} else if (ast.operator === '-') {
-					expression = if_Defined(left, 0) + ast.operator + if_Defined(right, 0);
-				} else {
-					expression = '(' + left + ')' + ast.operator + '(' + right + ')'; // todo: use precedence to determine when parens are needed
-				}
-				this.assignId(intoId, expression);
-				returnFn(expression);
-				break
-			case AST.LogicalExpression:
-				intoId = intoId || this.nextId();
-				this.recurse(ast.left, intoId);
-				this.if_(
-					ast.operator === '&&' ? intoId : not_(intoId),
-					this.lazyRecurse(ast.right, intoId)
-				);
-				returnFn(intoId);
-				break
-			case AST.ConditionalExpression:
-				intoId = intoId || this.nextId();
-				this.recurse(ast.test, intoId);
-				this.if_(
-					intoId,
-					this.lazyRecurse(ast.consequent, intoId),
-					this.lazyRecurse(ast.alternate, intoId),
-				);
-				returnFn(intoId);
-				break
-			case AST.Identifier:
-				if (this.stage === 'inputs') throw 'error: this has been broken for inputs'
-				// get cache key for identifier (incl. whether wantScope is true/false), see if there's an existing id for it, and only create a new one if not
-				key = getCacheKey(ast, wantScope, ckPrefix);
-				if (this.getCacheId(key)) {
-					if (intoId) {
-						this.assignId(intoId, this.getCacheId(key));
-					} else {
-						intoId = this.getCacheId(key);
-					}
-				} else {
-					intoId = intoId || this.nextId();
-					if (wantScope || (create && create !== 1)) {
-						this.assignId(intoId, this.lookupScope(ast.name, ast.ns));
-						if (create && create !== 1) {
-							this.if_(
-								and_(scopeIsNull(intoId), getParentScope(intoId)),
-								() => {
-									self.setOwnValue(getParentScope(intoId), ast.name, '{}', ast.ns);
-									self.assignId(intoId,
-										wantScope
-											? getOwnScope(getParentScope(intoId), ast.name)
-											: getOwnValue(getParentScope(intoId), ast.name)
-									);
-								}
-							);
-						}
-					} else {
-						this.assignId(intoId, self.lookupValue(ast.name, ast.ns));
-					}
-					this.setCacheId(key, intoId);
-				}
-				returnFn(intoId);
-				break
-			case AST.MemberExpression:
-				// get cache key for entire member expression (incl. whether wantScope is true/false), see if there's an existing id for it, and only create a new one if not
-				key = getCacheKey(ast, wantScope, ckPrefix);
-				if (this.getCacheId(key)) {
-					if (intoId) {
-						this.assignId(intoId, this.getCacheId(key));
-					} else {
-						intoId = this.getCacheId(key);
-					}
-				} else {
-					intoId = intoId || this.nextId(); // whole member expression will be stored here
-					// once the object (left) side is handled (see below), this will handle the property (right) side:
-					const memberContinuation = () => {
-						if (ast.computed) {
-							right = self.nextId();
-							self.recurse(ast.property, right);
-							if (create && create !== 1) {
-								self.if_(
-									isNull(getOwnValueDyn(left, right)),
-									() => {
-										self.setOwnValueDyn(left, right, '{}', ast.ns);
-									},
-								);
-							}
-							self.assignId(intoId, wantScope
-								? getOwnScopeDyn(left, right)
-								: getOwnValueDyn(left, right)
-							);
-						} else { // !ast.computed
-							const propName = ast.property.name;
-							if (create && create !== 1) {
-								self.if_(
-									isNull(getOwnValue(left, propName)),
-									() => {
-										self.setOwnValue(left, propName, '{}');
-									},
-								);
-							}
-							self.assignId(intoId, wantScope
-								? getOwnScope(left, propName)
-								: getOwnValue(left, propName)
-							);
-						}
-						self.setCacheId(key, intoId);
-						returnFn(intoId);
-					};
-					// handle left side, THEN invoke right side handler
-					left = getCacheKey(ast.object, true);
-					if (this.getCacheId(left)) {
-						left = this.getCacheId(left);
-						memberContinuation();
-					} else {
-						left = this.nextId(); // object scope will be stored here
-						this.recurse(ast.object, left, true, memberContinuation, undefined, !!create);
-					}
-				}
-				break
-			case AST.CallExpression:
-				intoId = intoId || this.nextId();
-				right = self.nextId(); // callee value -- the function to be called (ident for globals, member expr for methods)
-				args = [];
-				self.recurse(ast.callee, right, true, function () {
-					self.if_(
-						notNull(right),
-						function () {
-							ast.arguments.forEach(expr => {
-								self.recurse(
-									expr,
-									ast.constant ? undefined : self.nextId(),
-									undefined,
-									function (argument) {
-										args.push(argument);
-									}
-								);
-							});
-							expression = right + '.valueOf().call(' + getParentScope(right) + '.valueOf(),'
-								+ args.join(',') + ')';
-							self.assignId(intoId, expression);
-						},
-						function () {
-							self.assignId(intoId, "undefined");
-						}
-					);
-					returnFn(intoId);
-				});
-				break
-			case AST.FilterExpression:
-				intoId = intoId || this.nextId(); // holds the final result of the filter
-				right = self.filter(ast.filter.name); // holds the filter function (to call)
-				args = []; // strings (ids/source code) representing each argument to the filter function
-				left = self.nextId(); // to hold the evaluated input to the filter
-				self.recurse(ast.input, left, ast.lambda); // get the input
-				// add the INPUT to the filter function's argument list...
-				args.push(left);
-				// add the rest of the filter's arguments to the filter function'd argument list
-				ast.arguments.forEach(expr => {
-					const argId = self.nextId();
-					if (expr.type === AST.LambdaExpression || expr.type === AST.SortKeyExpression) {
-						self.assignId(argId, self.generateFunction(expr._lkey, 's'));
-						if (expr.type === AST.SortKeyExpression && expr.descending) {
-							self.assignId(argId + '.descending', 'true'); // sets a "descending" property on the sort key lambda function
-						}
-					} else {
-						self.recurse(expr, argId);
-					}
-					args.push(argId);
-				});
-				// call the filter function, passing in the arguments assembled above
-				expression = `${right}.call(undefined,${args.join(',')})`;
-				self.assignId(intoId, wantScope
-					? self.pushScope(expression)
-					: expression
-				);
-				returnFn(intoId);
-				break
-			case AST.LambdaExpression:
-			case AST.SortKeyExpression:
-				// currently no-op; already handled earlier in lambda pass
-				break
-			case AST.AssignmentExpression:
-				left = this.nextId();
-				right = this.nextId();
-				this.recurse(ast.left, left, true, () => {
-					self.if_(
-						and_(getParentScope(left), left + '.name'),
-						() => {
-							self.recurse(ast.right, right);
-							self.setOwnValueDyn(getParentScope(left), left + '.name', right, ast.ns);
-							self.assignId(intoId, getOwnValueDyn(getParentScope(left), left + '.name'));
-						}
-					);
-					returnFn(intoId || right);
-				}, undefined, 1);
-				break
-			case AST.ArrayExpression:
-				args = [];
-				ast.elements.forEach(expr => {
-					self.recurse(
-						expr,
-						ast.constant ? undefined : self.nextId(),
-						undefined,
-						function (argument) {
-							args.push(argument);
-						}
-					);
-				});
-				expression = '[' + args.join(',') + ']';
-				if (wantScope) {
-					expression = this.pushScope(expression);
-				}
-				this.assignId(intoId, expression);
-				returnFn(intoId || expression);
-				break
-			case AST.ObjectExpression:
-				args = [];
-				if (ast.properties.some(property => property.computed)) {
-					intoId = intoId || this.nextId();
-					this.assignId(intoId, '{}');
-					ast.properties.forEach(property => {
-						if (property.computed) {
-							left = self.nextId();
-							self.recurse(property.key, left);
-						} else {
-							left = property.key.type === AST.Identifier ? property.key.name : property.key.value + '';
-						}
-						right = self.nextId();
-						self.recurse(property.value, right);
-						self.assignId(member(intoId, left, property.computed), right);
-					});
-				} else {
-					ast.properties.forEach(property => {
-						self.recurse(
-							property.value,
-							ast.constant ? undefined : self.nextId(),
-							undefined,
-							function (expr) {
-								args.push(
-									escape(property.key.type === AST.Identifier ? property.key.name : property.key.value + '')
-									  + ':' + expr
-								);
-							}
-						);
-					});
-					expression = '{' + args.join(',') + '}';
-					if (wantScope) {
-						expression = this.pushScope(expression);
-					}
-					this.assignId(intoId, expression);
-				}
-				returnFn(intoId || expression);
-				break
-			case AST.ThisExpression:
-				this.useScope();
-				expression = wantScope
-					? 'c'
-					: 'c.valueOf()';
-				this.assignId(intoId, expression);
-				returnFn(intoId || expression);
-				break
-			case AST.NGValueParameter:
-				this.assignId(intoId, 'v');
-				returnFn(intoId || 'v');
-				break
-		}
-	}
+  /**
+   * transpiles the given ast node into JavaScript code that can execute in the browser or NodeJS
+   * 
+   * @param {object} ast node
+   * @param {string} intoId id of the variable (in the target code) in which the result of the current operation should
+   *                        be stored
+   * @param {object?} wantScope if the current operation needs to return a Scope object rather than a regular value
+   * @param {*} returnFn for all expressions and sub-expressions that ultimately compile down to strings (containing
+   *                        JavaScript), this callback (if specified) is invoked as the last thing after that
+   *                        compilation is complete. Not currently called for template & field nodes.
+   * @param {*} create 
+   * @param {*} skipWatchIdCheck 
+   * @returns void. The recurse method alters the state of this ASTCompiler instance, such that after the call to
+   * recurse returns, the generateFunction() method can be used to finish the code generation.
+   */
+  recurse (ast, intoId, wantScope, returnFn, ckPrefix, create, skipWatchIdCheck) {
+    if (!ast) return // any need to call returnFn() here before returning, or will it always already be noop?
+    const self = this;
+    let left, right, args, expression, key;
+    returnFn = returnFn || noop;
+    if (!skipWatchIdCheck && isDefined(ast.watchId)) {
+      intoId = intoId || this.nextId();
+      this.if_(
+        'i',
+        this.lazyAssignId(intoId, computedMember('i', ast.watchId)),
+        this.lazyRecurse(ast, intoId, wantScope, returnFn, create, true)
+      );
+      return
+    }
+    switch (ast.type) {
+      case AST.Program:
+      case AST.TemplateBlock:
+        intoId = intoId || this.nextId(false, '[]');
+        ast.body.forEach(elem => self.recurse(elem, undefined, undefined, result => {
+          self.pushElement(intoId, result);
+        }));
+        returnFn(this.assignId(intoId, intoId + '.join("")'));
+        break
+      case AST.TemplateElement:
+        returnFn(escape(ast.text));
+        break
+      case AST.ContentField:
+        self.recurse(ast.expression, undefined, undefined, result => {
+          right = result;
+        });
+        right += '+""'; // to string
+        returnFn(right);
+        break
+      case AST.ConditionalField:
+        intoId = intoId || this.nextId();
+        self.recurse(ast.test, intoId, undefined, undefined, 'bool');
+        self.if_(
+          intoId,
+          () => { // consequent can be either a block node or a single
+            if (ast.consequent.type === AST.TemplateBlock) {
+              self.assignId(intoId, '[]');
+              self.recurse(ast.consequent, intoId);
+            } else {
+              self.recurse(ast.consequent, undefined, undefined, result => {
+                self.assignId(intoId, result);
+              });
+            }
+          },
+          ast.alternate && (() => { // alternate, if specified, can be either a block node or a single
+            if (ast.alternate.type === AST.TemplateBlock) {
+              self.assignId(intoId, '[]');
+              self.recurse(ast.alternate, intoId);
+            } else {
+              self.recurse(ast.alternate, undefined, undefined, result => {
+                self.assignId(intoId, result);
+              });
+            }
+          }),
+        );
+        returnFn(intoId);
+        break
+      case AST.ListField:
+        expression = this.nextId(); // the list value itself
+        this.recurse(ast.expression, expression, true); // get list value
+        right = this.assignId(this.nextId(), this.generateFunction(ast.content._lkey, 's')); // list content lambda
+        left = this.nextId(false, ''); // var to hold result of list concatenation
+        this.if_(
+          expression + '&&' + expression + '.length',
+          () => {
+            self.assignId(left, '[]');
+            self.forEachScope(expression, left, right);
+            self.assignId(left, left + '.join("")');
+          }
+        );
+        returnFn(left);
+        break
+      case AST.Literal:
+        expression = escape(ast.value);
+        this.assignId(intoId, expression);
+        returnFn(intoId || expression);
+        break
+      case AST.UnaryExpression:
+        this.recurse(ast.argument, undefined, undefined, expr => {
+          right = expr;
+        });
+        expression = ast.operator + '(' + if_Defined(right, 0) + ')'; // TODO: use precedence to determine whether parens are needed
+        this.assignId(intoId, expression);
+        returnFn(expression);
+        break
+      case AST.BinaryExpression:
+        this.recurse(ast.left, undefined, undefined, expr => left = expr);
+        this.recurse(ast.right, undefined, undefined, expr => right = expr);
+        if (ast.operator === '+') {
+          expression = plus_(left, right);
+        } else if (ast.operator === '-') {
+          expression = if_Defined(left, 0) + ast.operator + if_Defined(right, 0);
+        } else {
+          expression = '(' + left + ')' + ast.operator + '(' + right + ')'; // todo: use precedence to determine when parens are needed
+        }
+        this.assignId(intoId, expression);
+        returnFn(expression);
+        break
+      case AST.LogicalExpression:
+        intoId = intoId || this.nextId();
+        this.recurse(ast.left, intoId);
+        this.if_(
+          ast.operator === '&&' ? intoId : not_(intoId),
+          this.lazyRecurse(ast.right, intoId)
+        );
+        returnFn(intoId);
+        break
+      case AST.ConditionalExpression:
+        intoId = intoId || this.nextId();
+        this.recurse(ast.test, intoId);
+        this.if_(
+          intoId,
+          this.lazyRecurse(ast.consequent, intoId),
+          this.lazyRecurse(ast.alternate, intoId),
+        );
+        returnFn(intoId);
+        break
+      case AST.Identifier:
+        if (this.stage === 'inputs') throw 'error: this has been broken for inputs'
+        // get cache key for identifier (incl. whether wantScope is true/false), see if there's an existing id for it, and only create a new one if not
+        key = getCacheKey(ast, wantScope, ckPrefix);
+        if (this.getCacheId(key)) {
+          if (intoId) {
+            this.assignId(intoId, this.getCacheId(key));
+          } else {
+            intoId = this.getCacheId(key);
+          }
+        } else {
+          intoId = intoId || this.nextId();
+          if (wantScope || (create && create !== 1)) {
+            this.assignId(intoId, this.lookupScope(ast.name, ast.ns));
+            if (create && create !== 1) {
+              this.if_(
+                and_(scopeIsNull(intoId), getParentScope(intoId)),
+                () => {
+                  self.setOwnValue(getParentScope(intoId), ast.name, '{}', ast.ns);
+                  self.assignId(intoId,
+                    wantScope
+                      ? getOwnScope(getParentScope(intoId), ast.name)
+                      : getOwnValue(getParentScope(intoId), ast.name)
+                  );
+                }
+              );
+            }
+          } else {
+            this.assignId(intoId, self.lookupValue(ast.name, ast.ns));
+          }
+          this.setCacheId(key, intoId);
+        }
+        returnFn(intoId);
+        break
+      case AST.MemberExpression:
+        // get cache key for entire member expression (incl. whether wantScope is true/false), see if there's an existing id for it, and only create a new one if not
+        key = getCacheKey(ast, wantScope, ckPrefix);
+        if (this.getCacheId(key)) {
+          if (intoId) {
+            this.assignId(intoId, this.getCacheId(key));
+          } else {
+            intoId = this.getCacheId(key);
+          }
+        } else {
+          intoId = intoId || this.nextId(); // whole member expression will be stored here
+          // once the object (left) side is handled (see below), this will handle the property (right) side:
+          const memberContinuation = () => {
+            if (ast.computed) {
+              right = self.nextId();
+              self.recurse(ast.property, right);
+              if (create && create !== 1) {
+                self.if_(
+                  isNull(getOwnValueDyn(left, right)),
+                  () => {
+                    self.setOwnValueDyn(left, right, '{}', ast.ns);
+                  },
+                );
+              }
+              self.assignId(intoId, wantScope
+                ? getOwnScopeDyn(left, right)
+                : getOwnValueDyn(left, right)
+              );
+            } else { // !ast.computed
+              const propName = ast.property.name;
+              if (create && create !== 1) {
+                self.if_(
+                  isNull(getOwnValue(left, propName)),
+                  () => {
+                    self.setOwnValue(left, propName, '{}');
+                  },
+                );
+              }
+              self.assignId(intoId, wantScope
+                ? getOwnScope(left, propName)
+                : getOwnValue(left, propName)
+              );
+            }
+            self.setCacheId(key, intoId);
+            returnFn(intoId);
+          };
+          // handle left side, THEN invoke right side handler
+          left = getCacheKey(ast.object, true);
+          if (this.getCacheId(left)) {
+            left = this.getCacheId(left);
+            memberContinuation();
+          } else {
+            left = this.nextId(); // object scope will be stored here
+            this.recurse(ast.object, left, true, memberContinuation, undefined, !!create);
+          }
+        }
+        break
+      case AST.CallExpression:
+        intoId = intoId || this.nextId();
+        right = self.nextId(); // callee value -- the function to be called (ident for globals, member expr for methods)
+        args = [];
+        self.recurse(ast.callee, right, true, function () {
+          self.if_(
+            notNull(right),
+            function () {
+              ast.arguments.forEach(expr => {
+                self.recurse(
+                  expr,
+                  ast.constant ? undefined : self.nextId(),
+                  undefined,
+                  function (argument) {
+                    args.push(argument);
+                  }
+                );
+              });
+              expression = right + '.valueOf().call(' + getParentScope(right) + '.valueOf(),'
+                + args.join(',') + ')';
+              self.assignId(intoId, expression);
+            },
+            function () {
+              self.assignId(intoId, "undefined");
+            }
+          );
+          returnFn(intoId);
+        });
+        break
+      case AST.FilterExpression:
+        intoId = intoId || this.nextId(); // holds the final result of the filter
+        right = self.filter(ast.filter.name); // holds the filter function (to call)
+        args = []; // strings (ids/source code) representing each argument to the filter function
+        left = self.nextId(); // to hold the evaluated input to the filter
+        self.recurse(ast.input, left, ast.lambda); // get the input
+        // add the INPUT to the filter function's argument list...
+        args.push(left);
+        // add the rest of the filter's arguments to the filter function'd argument list
+        ast.arguments.forEach(expr => {
+          const argId = self.nextId();
+          if (expr.type === AST.LambdaExpression || expr.type === AST.SortKeyExpression) {
+            self.assignId(argId, self.generateFunction(expr._lkey, 's'));
+            if (expr.type === AST.SortKeyExpression && expr.descending) {
+              self.assignId(argId + '.descending', 'true'); // sets a "descending" property on the sort key lambda function
+            }
+          } else {
+            self.recurse(expr, argId);
+          }
+          args.push(argId);
+        });
+        // call the filter function, passing in the arguments assembled above
+        expression = `${right}.call(undefined,${args.join(',')})`;
+        self.assignId(intoId, wantScope
+          ? self.pushScope(expression)
+          : expression
+        );
+        returnFn(intoId);
+        break
+      case AST.LambdaExpression:
+      case AST.SortKeyExpression:
+        // currently no-op; already handled earlier in lambda pass
+        break
+      case AST.AssignmentExpression:
+        left = this.nextId();
+        right = this.nextId();
+        this.recurse(ast.left, left, true, () => {
+          self.if_(
+            and_(getParentScope(left), left + '.name'),
+            () => {
+              self.recurse(ast.right, right);
+              self.setOwnValueDyn(getParentScope(left), left + '.name', right, ast.ns);
+              self.assignId(intoId, getOwnValueDyn(getParentScope(left), left + '.name'));
+            }
+          );
+          returnFn(intoId || right);
+        }, undefined, 1);
+        break
+      case AST.ArrayExpression:
+        args = [];
+        ast.elements.forEach(expr => {
+          self.recurse(
+            expr,
+            ast.constant ? undefined : self.nextId(),
+            undefined,
+            function (argument) {
+              args.push(argument);
+            }
+          );
+        });
+        expression = '[' + args.join(',') + ']';
+        if (wantScope) {
+          expression = this.pushScope(expression);
+        }
+        this.assignId(intoId, expression);
+        returnFn(intoId || expression);
+        break
+      case AST.ObjectExpression:
+        args = [];
+        if (ast.properties.some(property => property.computed)) {
+          intoId = intoId || this.nextId();
+          this.assignId(intoId, '{}');
+          ast.properties.forEach(property => {
+            if (property.computed) {
+              left = self.nextId();
+              self.recurse(property.key, left);
+            } else {
+              left = property.key.type === AST.Identifier ? property.key.name : property.key.value + '';
+            }
+            right = self.nextId();
+            self.recurse(property.value, right);
+            self.assignId(member(intoId, left, property.computed), right);
+          });
+        } else {
+          ast.properties.forEach(property => {
+            self.recurse(
+              property.value,
+              ast.constant ? undefined : self.nextId(),
+              undefined,
+              function (expr) {
+                args.push(
+                  escape(property.key.type === AST.Identifier ? property.key.name : property.key.value + '')
+                    + ':' + expr
+                );
+              }
+            );
+          });
+          expression = '{' + args.join(',') + '}';
+          if (wantScope) {
+            expression = this.pushScope(expression);
+          }
+          this.assignId(intoId, expression);
+        }
+        returnFn(intoId || expression);
+        break
+      case AST.ThisExpression:
+        this.useScope();
+        expression = wantScope
+          ? 'c'
+          : 'c.valueOf()';
+        this.assignId(intoId, expression);
+        returnFn(intoId || expression);
+        break
+      case AST.NGValueParameter:
+        this.assignId(intoId, 'v');
+        returnFn(intoId || 'v');
+        break
+    }
+  }
 
-	// getHasOwnProperty (element, property) {
-	// 	const key = element + "." + property
-	// 	const own = this.current().own
-	// 	if (!own.hasOwnProperty(key)) {
-	// 		own[key] = this.nextId(
-	// 			false,
-	// 			element + "&&(" + escape(property) + " in " + element + ")"
-	// 		)
-	// 	}
-	// 	return own[key]
-	// }
+  // getHasOwnProperty (element, property) {
+  // 	const key = element + "." + property
+  // 	const own = this.current().own
+  // 	if (!own.hasOwnProperty(key)) {
+  // 		own[key] = this.nextId(
+  // 			false,
+  // 			element + "&&(" + escape(property) + " in " + element + ")"
+  // 		)
+  // 	}
+  // 	return own[key]
+  // }
 
-	hasCachedExpr (cacheKey) {
-		return this.current().own.hasOwnProperty(cacheKey)
-	}
+  hasCachedExpr (cacheKey) {
+    return this.current().own.hasOwnProperty(cacheKey)
+  }
 
-	getCacheId (cacheKey) {
-		const own = this.current().own;
-		return own[cacheKey]
-	}
+  getCacheId (cacheKey) {
+    const own = this.current().own;
+    return own[cacheKey]
+  }
 
-	setCacheId (cacheKey, id) {
-		const own = this.current().own;
-		if (own[cacheKey]) throw new Error('cache key already has value set')
-		own[cacheKey] = id;
-	}
+  setCacheId (cacheKey, id) {
+    const own = this.current().own;
+    if (own[cacheKey]) throw new Error('cache key already has value set')
+    own[cacheKey] = id;
+  }
 
-	useScope () {
-		const own = this.current().own;
-		if (!own.hasOwnProperty('_scope_')) {
-			this.current().vars.unshift('c=use(s)');
-			own['_scope_'] = 'c';
-		}
-	}
+  useScope () {
+    const own = this.current().own;
+    if (!own.hasOwnProperty('_scope_')) {
+      this.current().vars.unshift('c=use(s)');
+      own['_scope_'] = 'c';
+    }
+  }
 
-	/**
-	 * If a destination variable id is provided, assigns value to that variable id and returns
-	 * the variable id. If no destination variable is provided, ignores the value and returns
-	 * falsy.
-	 * @param {string?} id the runtime identifier that will be assigned to value
-	 * @param {string} value raw string that will be assigned to id
-	 * @returns {string?} which identifier the value was stored to, if any
-	 */
-	assignId (id, value) {
-		if (!id) return
-		this.current().body.push(id, '=', value, ';');
-		return id
-	}
+  /**
+   * If a destination variable id is provided, assigns value to that variable id and returns
+   * the variable id. If no destination variable is provided, ignores the value and returns
+   * falsy.
+   * @param {string?} id the runtime identifier that will be assigned to value
+   * @param {string} value raw string that will be assigned to id
+   * @returns {string?} which identifier the value was stored to, if any
+   */
+  assignId (id, value) {
+    if (!id) return
+    this.current().body.push(id, '=', value, ';');
+    return id
+  }
 
-	pushElement (id, value) {
-		if (!id) return
-		this.current().body.push(id, '.push(', value, ');');
-	}
+  pushElement (id, value) {
+    if (!id) return
+    this.current().body.push(id, '.push(', value, ');');
+  }
 
-	pushScope (expression) {
-		this.useScope();
-		return 'c.pushScope(' + expression + ')'
-	}
+  pushScope (expression) {
+    this.useScope();
+    return 'c.pushScope(' + expression + ')'
+  }
 
-	lookupScope (name, ns) {
-		this.useScope();
-		return 'c.lookupScope("' + name + (ns ? '","' + ns : '') + '")'
-	}
+  lookupScope (name, ns) {
+    this.useScope();
+    return 'c.lookupScope("' + name + (ns ? '","' + ns : '') + '")'
+  }
 
-	lookupValue (name, ns) {
-		this.useScope();
-		return 'c.lookupValue("' + name + (ns ? '","' + ns : '') + '")'
-	}
+  lookupValue (name, ns) {
+    this.useScope();
+    return 'c.lookupValue("' + name + (ns ? '","' + ns : '') + '")'
+  }
 
-	forEachScope (scopeId, accumulatorId, lambdaId) {
-		const result = scopeId + '.forEachScope(es=>'
-			+ accumulatorId + '.push(' + lambdaId + '.call(undefined,es)))';
-		this.current().body.push(result, ';');
-	}
+  forEachScope (scopeId, accumulatorId, lambdaId) {
+    const result = scopeId + '.forEachScope(es=>'
+      + accumulatorId + '.push(' + lambdaId + '.call(undefined,es)))';
+    this.current().body.push(result, ';');
+  }
 
-	setOwnValue (scopeId, name, value, ns) {
-		return this.setOwnValueDyn(scopeId, '"' + name + '"', value, ns)
-	}
+  setOwnValue (scopeId, name, value, ns) {
+    return this.setOwnValueDyn(scopeId, '"' + name + '"', value, ns)
+  }
 
-	setOwnValueDyn (scopeId, id, value, ns) {
-		this.current().body.push( // whoever actually pushes a command onto body is responsible for the ';':
-			scopeId + '.setOwnValue(' + id + ',' + value + (ns ? ',"' + ns + '"' : '') + ');'
-		);
-	}
+  setOwnValueDyn (scopeId, id, value, ns) {
+    this.current().body.push( // whoever actually pushes a command onto body is responsible for the ';':
+      scopeId + '.setOwnValue(' + id + ',' + value + (ns ? ',"' + ns + '"' : '') + ');'
+    );
+  }
 
-	filter (filterName) {
-		if (!this.state.filters.hasOwnProperty(filterName)) {
-			this.state.filters[filterName] = this.nextId(true);
-		}
-		return this.state.filters[filterName]
-	}
+  filter (filterName) {
+    if (!this.state.filters.hasOwnProperty(filterName)) {
+      this.state.filters[filterName] = this.nextId(true);
+    }
+    return this.state.filters[filterName]
+  }
 
-	return_ (id) {
-		this.current().body.push('return ', id, ';');
-	}
+  return_ (id) {
+    this.current().body.push('return ', id, ';');
+  }
 
-	// if test === true AT COMPILE TIME, we will execute consequentFn and ignore alternateFn.
-	// Otherwise it devolves into a test performed at runtime, where if test evaluates to truthy
-	// consequentFn will be executed, otherwise (if specified) alternateFn will be executed.
-	if_ (test, consequentFn, alternateFn) {
-		if (test === true) {
-			consequentFn();
-		} else {
-			const body = this.current().body;
-			body.push('if(', test, '){');
-			consequentFn();
-			body.push('}');
-			if (alternateFn) {
-				body.push('else{');
-				alternateFn();
-				body.push('}');
-			}
-		}
-	}
+  // if test === true AT COMPILE TIME, we will execute consequentFn and ignore alternateFn.
+  // Otherwise it devolves into a test performed at runtime, where if test evaluates to truthy
+  // consequentFn will be executed, otherwise (if specified) alternateFn will be executed.
+  if_ (test, consequentFn, alternateFn) {
+    if (test === true) {
+      consequentFn();
+    } else {
+      const body = this.current().body;
+      body.push('if(', test, '){');
+      consequentFn();
+      body.push('}');
+      if (alternateFn) {
+        body.push('else{');
+        alternateFn();
+        body.push('}');
+      }
+    }
+  }
 
-	// "lazy" functions are just conveniences to curry calls to recurse and setValue,
-	// used only in conjunction with _if() (which expects curried functions for its
-	// consequentFn and alternateFn parameters).
-	lazyRecurse (ast, intoId, wantScope, returnFn, ckPrefix, create, skipWatchIdCheck) {
-		const self = this;
-		return function () {
-			self.recurse(ast, intoId, wantScope, returnFn, ckPrefix, create, skipWatchIdCheck);
-		}
-	}
+  // "lazy" functions are just conveniences to curry calls to recurse and setValue,
+  // used only in conjunction with _if() (which expects curried functions for its
+  // consequentFn and alternateFn parameters).
+  lazyRecurse (ast, intoId, wantScope, returnFn, ckPrefix, create, skipWatchIdCheck) {
+    const self = this;
+    return function () {
+      self.recurse(ast, intoId, wantScope, returnFn, ckPrefix, create, skipWatchIdCheck);
+    }
+  }
 
-	lazyAssignId (id, value) {
-		const self = this;
-		return function () {
-			self.assignId(id, value);
-		}
-	}
+  lazyAssignId (id, value) {
+    const self = this;
+    return function () {
+      self.assignId(id, value);
+    }
+  }
 
-	nextId (skip, init) {
-		const id = 'v' + this.state.nextId++;
-		if (!skip) {
-			this.current().vars.push(id + (init ? '=' + init : ''));
-		}
-		return id
-	}
+  nextId (skip, init) {
+    const id = 'v' + this.state.nextId++;
+    if (!skip) {
+      this.current().vars.push(id + (init ? '=' + init : ''));
+    }
+    return id
+  }
 
-	current () {
-		return this.state[this.state.computing]
-	}
+  current () {
+    return this.state[this.state.computing]
+  }
 }
 
 function getCacheKey (ast, isScope, prefix) {
-	return (prefix ? prefix + '::' : '') + (isScope ? 'scope::' : '') + AST.serialize(ast)
+  return (prefix ? prefix + '::' : '') + (isScope ? 'scope::' : '') + AST.serialize(ast)
 }
 
 function getOwnScope (scopeId, name) {
-	return getOwnScopeDyn(scopeId, '"' + name + '"')
+  return getOwnScopeDyn(scopeId, '"' + name + '"')
 }
 
 function getOwnScopeDyn (scopeId, id) {
-	return scopeId + '.getOwnScope(' + id + ')'
+  return scopeId + '.getOwnScope(' + id + ')'
 }
 
 function getParentScope (scopeId) {
-	return scopeId + '._parent'
+  return scopeId + '._parent'
 }
 
 function getOwnValue (scopeId, name) {
-	return getOwnValueDyn(scopeId, '"' + name + '"')
+  return getOwnValueDyn(scopeId, '"' + name + '"')
 }
 
 function getOwnValueDyn (scopeId, id) {
-	return scopeId + '.getOwnValue(' + id + ')'
+  return scopeId + '.getOwnValue(' + id + ')'
 }
 
 function if_Defined (id, defaultValue) {
-	return 'ifd(' + id + ',' + escape(defaultValue) + ')'
+  return 'ifd(' + id + ',' + escape(defaultValue) + ')'
 }
 
 function plus_ (left, right) {
-	return 'pls(' + left + ',' + right + ')'
+  return 'pls(' + left + ',' + right + ')'
 }
 
 function not_ (expression) {
-	return '!(' + expression + ')'
+  return '!(' + expression + ')'
 }
 
 function and_ (left, right, needParens = false) {
-	return needParens
-		? `(${left})&&(${right})`
-		: left + '&&' + right
+  return needParens
+    ? `(${left})&&(${right})`
+    : left + '&&' + right
 }
 
 function scopeIsNull (scopeId) {
-	return scopeId + '.isNull()'
+  return scopeId + '.isNull()'
 }
 
 function isNull (expression) {
-	return expression + '==null'
+  return expression + '==null'
 }
 
 function notNull (expression) {
-	return expression + '!=null'
+  return expression + '!=null'
 }
 
 function member (left, right, computed) {
-	if (computed) return computedMember(left, right)
-	return nonComputedMember(left, right)
+  if (computed) return computedMember(left, right)
+  return nonComputedMember(left, right)
 }
 
 function computedMember (left, right) {
-	return left + '[' + right + ']'
+  return left + '[' + right + ']'
 }
 
 function nonComputedMember (left, right) {
-	const SAFE_IDENTIFIER = /^[$_a-zA-Z][$_a-zA-Z0-9]*$/;
-	const UNSAFE_CHARACTERS = /[^$_a-zA-Z0-9]/g;
-	let expr = '';
-	if (SAFE_IDENTIFIER.test(right)) {
-		expr = left + '.' + right;
-	} else {
-		right = right.replace(UNSAFE_CHARACTERS, stringEscapeFn);
-		expr = left + '["' + right + '"]';
-	}
-	return expr
+  const SAFE_IDENTIFIER = /^[$_a-zA-Z][$_a-zA-Z0-9]*$/;
+  const UNSAFE_CHARACTERS = /[^$_a-zA-Z0-9]/g;
+  let expr = '';
+  if (SAFE_IDENTIFIER.test(right)) {
+    expr = left + '.' + right;
+  } else {
+    right = right.replace(UNSAFE_CHARACTERS, stringEscapeFn);
+    expr = left + '["' + right + '"]';
+  }
+  return expr
 }
 
 function escape (value) {
-	if (isString(value))
-		return "'" + value.replace(stringEscapeRegex, stringEscapeFn) + "'"
-	if (isNumber(value)) return value.toString()
-	if (value === true) return 'true'
-	if (value === false) return 'false'
-	if (value === null) return 'null'
-	if (typeof value === 'undefined') return 'undefined'
-	throw new Error('IMPOSSIBLE')
+  if (isString(value))
+    return "'" + value.replace(stringEscapeRegex, stringEscapeFn) + "'"
+  if (isNumber(value)) return value.toString()
+  if (value === true) return 'true'
+  if (value === false) return 'false'
+  if (value === null) return 'null'
+  if (typeof value === 'undefined') return 'undefined'
+  throw new Error('IMPOSSIBLE')
 }
 
 function stringEscapeFn (c) {
-	return '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4)
+  return '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4)
 }
 
 function append(builder, str) {
-	if (str) {
-		builder.push(str);
-	}
+  if (str) {
+    builder.push(str);
+  }
 }
 
 function * FindLambdas (ast) {
   switch (ast.type) {
-		case AST.Identifier:
-		case AST.Literal:
-		case AST.ThisExpression:
-		case AST.NoOp:
-			break
+    case AST.Identifier:
+    case AST.Literal:
+    case AST.ThisExpression:
+    case AST.NoOp:
+      break
     case AST.Program:
-		case AST.TemplateBlock:
-			for (const elem of ast.body) yield * FindLambdas(elem);
-		  break
+    case AST.TemplateBlock:
+      for (const elem of ast.body) yield * FindLambdas(elem);
+      break
     case AST.ContentField:
-			yield * FindLambdas(ast.expression);
-			break
+      yield * FindLambdas(ast.expression);
+      break
     case AST.ConditionalField:
-			yield * FindLambdas(ast.test);
-			yield * FindLambdas(ast.consequent);
-			if (ast.alternate) yield * FindLambdas(ast.alternate);
-			break
+      yield * FindLambdas(ast.test);
+      yield * FindLambdas(ast.consequent);
+      if (ast.alternate) yield * FindLambdas(ast.alternate);
+      break
     case AST.ListField:
-			yield * FindLambdas(ast.expression);
-			yield * FindLambdas(ast.content);
-			yield ast.content; // list block (but not other blocks!) treated as a lambda by the compiler
-			break
+      yield * FindLambdas(ast.expression);
+      yield * FindLambdas(ast.content);
+      yield ast.content; // list block (but not other blocks!) treated as a lambda by the compiler
+      break
     case AST.MemberExpression:
-			yield * FindLambdas(ast.object);
-			yield * FindLambdas(ast.property);
+      yield * FindLambdas(ast.object);
+      yield * FindLambdas(ast.property);
       break
     case AST.CallExpression:
-			yield * FindLambdas(ast.callee);
-			for (const argument of ast.arguments) yield * FindLambdas(argument);
-			break
+      yield * FindLambdas(ast.callee);
+      for (const argument of ast.arguments) yield * FindLambdas(argument);
+      break
     case AST.FilterExpression:
-			yield * FindLambdas(ast.input);
-			for (const argument of ast.arguments) yield * FindLambdas(argument);
-			break
-		case AST.LambdaExpression:
-			yield * FindLambdas(ast.expression);
-			yield ast;
-			break
-		case AST.SortKeyExpression:
-			yield * FindLambdas(ast.key);
-			yield ast;
-			break
+      yield * FindLambdas(ast.input);
+      for (const argument of ast.arguments) yield * FindLambdas(argument);
+      break
+    case AST.LambdaExpression:
+      yield * FindLambdas(ast.expression);
+      yield ast;
+      break
+    case AST.SortKeyExpression:
+      yield * FindLambdas(ast.key);
+      yield ast;
+      break
     case AST.ArrayExpression:
-			for (const elem of ast.elements) yield * FindLambdas(elem);
-			break
+      for (const elem of ast.elements) yield * FindLambdas(elem);
+      break
     case AST.ObjectExpression:
-			for (const prop of ast.properties) yield * FindLambdas(prop);
-			break
+      for (const prop of ast.properties) yield * FindLambdas(prop);
+      break
     case AST.Property:
-			yield * FindLambdas(ast.value);
-			break
+      yield * FindLambdas(ast.value);
+      break
     case AST.BinaryExpression:
     case AST.LogicalExpression:
-			yield * FindLambdas(ast.left);
-			yield * FindLambdas(ast.right);
-			break
+      yield * FindLambdas(ast.left);
+      yield * FindLambdas(ast.right);
+      break
     case AST.UnaryExpression:
-			yield * FindLambdas(ast.argument);
-			break
+      yield * FindLambdas(ast.argument);
+      break
     case AST.ConditionalExpression:
-			yield * FindLambdas(ast.test);
-			yield * FindLambdas(ast.consequent);
-			yield * FindLambdas(ast.alternate);
-			break
+      yield * FindLambdas(ast.test);
+      yield * FindLambdas(ast.consequent);
+      yield * FindLambdas(ast.alternate);
+      break
   }
-	return
+  return
 }
 
 // define built-in filters
@@ -3441,7 +3438,7 @@ function contains (input, value) {
   if (!isIterable(input)) return false
   value = value && value.valueOf();
   for (const item of input) {
-    if (deepEqual(item && item.valueOf(), value)) {
+    if (equal(item && item.valueOf(), value)) {
       return true
     }
   }
@@ -3709,8 +3706,8 @@ function legacyNode (obj) {
 }
 
 class LogicTreeImporter {
-  constructor (tinql) {
-    this.tinql = tinql;
+  constructor (tinq) {
+    this.tinq = tinq;
   }
 
   arrayToBlock (nodeArray, type) {
@@ -3739,7 +3736,7 @@ class LogicTreeImporter {
   contentField (node) {
     const result = {
       type: AST.ContentField,
-      expression: this.tinql.parseExpression(node.expr),
+      expression: this.tinq.parseExpression(node.expr),
     };
     if (node.id) {
       result.fieldNum = node.id;
@@ -3764,7 +3761,7 @@ class LogicTreeImporter {
     }
     const result = {
       type: AST.ConditionalField,
-      test: this.tinql.parseExpression(node.expr),
+      test: this.tinq.parseExpression(node.expr),
       consequent,
       alternate,
     };
@@ -3785,7 +3782,7 @@ class LogicTreeImporter {
     const content = this.arrayToBlock(node.contentArray, AST.TemplateBlock);
     const result = {
       type: AST.ListField,
-      expression: this.tinql.parseExpression(node.expr),
+      expression: this.tinq.parseExpression(node.expr),
       content,
     };
     if (node.id) {
@@ -4062,31 +4059,35 @@ class DataAggregator {
     return this.stack.length > 0 ? this.stack[this.stack.length - 1] : null
   }
 
-  toJson () {
+  toJson (composeTextExternals = false) {
     return JSON.stringify(this.data, (key, value) => {
-      if (value instanceof ExternalBinary) {
-        const { scope, assembler, ...orig } = value;
-        if (assembler && !orig.data) {
-          orig.data = assembler.data.data;
+      if (value instanceof ExternalFile) {
+        if (typeof value.data === 'string' && composeTextExternals) {
+          return value.data
         }
-        return orig
+        let uri = `tinq://ExternalFile/${value.id}`;
+        if (value.KeepSections) {
+          uri += '?KeepSections=true';
+        }
+        return uri
       } // else
       return value
     })
   }
 
-  toXml (elementName) {
-    return '<?xml version="1.0"?>' + this.serializeXmlElement(elementName, this.data)
+  toXml (elementName = 'top', composeTextExternals = false) {
+    return '<?xml version="1.0"?>' + this.serializeXmlElement(elementName, this.data, composeTextExternals)
   }
 
-  serializeXmlElement (ident, value) {
+  serializeXmlElement (ident, value, cte) {
+    const name = validXmlNameRegex.test(ident) ? ident : encodeToValidXmlName(ident);
     if (value === '' || value === null || value === undefined /* || (Array.isArray(value) && value.length === 0) */) {
-      return `<${ident}/>`
+      return `<${name}/>`
     } // else
-    return `<${ident}>${this.serializeXmlValue(value)}</${ident}>`
+    return `<${name}>${this.serializeXmlValue(value, cte)}</${name}>`
   }
 
-  serializeXmlValue (value) {
+  serializeXmlValue (value, cte) {
     const valueType = Array.isArray(value.valueOf()) ? 'array' : isDate(value) ? 'date' : typeof value.valueOf();
     switch (valueType) {
       case 'string':
@@ -4098,16 +4099,19 @@ class DataAggregator {
       case 'boolean':
         return value ? 'true' : 'false'
       case 'object':
-        return this.serializeXmlObject(value)
+        return this.serializeXmlObject(value, cte)
       case 'array': {
         const itemIdent = value._ident;
-        return value.map(item => this.serializeXmlElement(itemIdent, item)).join('')
+        return value.map(item => this.serializeXmlElement(itemIdent, item, cte)).join('')
       }
     }
   }
 
-  serializeXmlObject (obj) {
-    if (obj instanceof ExternalBinary) {
+  serializeXmlObject (obj, cte) {
+    if (obj instanceof ExternalFile) {
+      if (typeof obj.data === 'string' && cte) {
+        return obj.data
+      } // else
       let uri = `oxpt://DocumentAssembler/insert/${obj.id}`;
       if (obj.KeepSections) {
         uri += '?KeepSections=true';
@@ -4139,10 +4143,27 @@ const escapeXml = function (str) {
   })
 };
 
+const validXmlNameRegex = /^[a-zA-Z_][\w.-]*$/;
+
+const encodeToValidXmlName = function (input) {
+  return input.split('').map(char => {
+    const code = char.charCodeAt(0);
+    if ((code >= 65 && code <= 90) || // A-Z
+        (code >= 97 && code <= 122) || // a-z
+        (code >= 48 && code <= 57) || // 0-9
+        char === '.' || char === '-' || char === '_') {
+      return char
+    } else {
+      return '_' + code.toString(16).toUpperCase()
+    }
+  }).join('')
+};
+
 class DataExtractor {
-  constructor () {
+  constructor (externals = null) {
     this.filters = GetFilter;
-    this.indirects = [];
+    this.externals = externals || []; // queue of ALL externals encountered in the extraction or its parents
+    this.requires = []; // externals on which this extraction depends (directly)
     this.missing = {};
     this.errors = [];
     this.data = new DataAggregator();
@@ -4151,7 +4172,12 @@ class DataExtractor {
   assembleData (ast, scope) {
     let evaluator = this.compile(ast);
     evaluator(useScope(scope));
-    return this.data
+    delete this.data.stack;
+    const wrapper = new ExternalFile(null, this.data);
+    if (this.requires.length > 0) {
+      wrapper.requires = this.requires.map(e => e.id);
+    }
+    return wrapper
   }
 
   compile (ast) {
@@ -4181,6 +4207,8 @@ class DataExtractor {
             .map(fn => fn(scope))
             .join('')
         }
+      case AST.TemplateElement:
+        return noop
       case AST.ContentField:
         expr = AST.serialize(ast.expression);
         key = ast.key || expr;
@@ -4397,9 +4425,11 @@ class DataExtractor {
       this.missing[expr] = true;
       value = this._missingValuePlaceholder(expr, ast);
     } else if (typeof value === 'object') {
-      if (value instanceof ExternalBinary) {
-        this.data.set(ident, this._indirectLookup(value));
+      if (value instanceof ExternalFile) {
+        this.data.set(ident, this._registerExternal(value));
         return
+      //} else if (Array.isArray(value) && value.length && value[0] instanceof ExternalFile) {
+      //  value.forEach(v => this.data.set())
       } else if (value.errors || value.missing) {
         // value is a yatte EvaluationResult, probably because of nested template evaluation
         if (value.missing && value.missing.length > 0) {
@@ -4420,15 +4450,23 @@ class DataExtractor {
     }
   }
 
-  _indirectLookup (indirObj) {
-    // see if this indirect has already been encountered/added
-    let indirect = this.indirects.find(ex => ex.isEqualTo(indirObj));
-    if (!indirect) {
-      indirect = new ExternalBinary(indirObj); // { ...indirObj, id: uuidv4() }
-      indirect.id = uuid.v4();
-      this.indirects.push(indirect);
+  _lookupExternal (extFile) {
+    // see if this externalFile+data has already been encountered/added
+    return this.externals.find(ex => ex.isEqualTo(extFile))
+  }
+
+  _registerExternal (extFile) {
+    // see if this externalFile+data has already been encountered/added
+    let existing = this._lookupExternal(extFile);
+    if (!existing) {
+      extFile.id = uuid.v4(); // assign unique ID
+      this.externals.push(extFile);
+      existing = extFile;
     }
-    return indirect
+    if (!this.requires.includes(existing)) {
+      this.requires.push(existing);
+    }
+    return existing
   }
 
   _setCondition (ident, value) {
@@ -4468,155 +4506,198 @@ class DataExtractor {
 }
 
 const defaultOptions = {
-	interpreter: false, // true uses interpreter instead of compiler
-	includeLocation: false, // true includes character location metadata in AST
+  interpreter: false, // true uses interpreter instead of compiler
+  includeLocation: false, // true includes character location metadata in AST
 };
 
 const untypedDefault = {
-	name: '*',
-	type: '*',
-	properties: [{ name: '*', type: '*', isList: '*' }],
-	functions: [{ name: '*', type: '*', isList: '*', params: [{ allowedTypes: 'expr', optional: true, repeated: true }] }],
-	filters: [{ name: '*', type: '*', isList: '*', params: [{ allowedTypes: 'expr', optional: true, repeated: true }] }],
+  name: '*',
+  type: '*',
+  properties: [{ name: '*', type: '*', isList: '*' }],
+  functions: [{ name: '*', type: '*', isList: '*', params: [{ allowedTypes: 'expr', optional: true, repeated: true }] }],
+  filters: [{ name: '*', type: '*', isList: '*', params: [{ allowedTypes: 'expr', optional: true, repeated: true }] }],
 };
 
 const filterAliases = {};
 // initialize filterAliases
 for (const name in filters) {
-	const func = filters[name];
-	if (func && func.aliases) {
-		func.aliases.forEach(alias => {
-			filterAliases[alias] = func;
-		});
-	}
+  const func = filters[name];
+  if (func && func.aliases) {
+    func.aliases.forEach(alias => {
+      filterAliases[alias] = func;
+    });
+  }
 }
 function GetFilter (name) {
-	return filters[name] || filterAliases[name]
+  return filters[name] || filterAliases[name]
 }
 
 class Tinq {
-	constructor (options = {}, typeDefs = [untypedDefault]) {
-		this.options = { ...defaultOptions };
-		for (const prop of Object.keys(options)) {
-			this.options[prop] = options[prop];
-		}
-		const typeDict = this.typeDict = {};
-		typeDefs.forEach(typeDef => typeDict[typeDef.name] = typeDef);
-		this.expressioner = new ExpressionParser(GetFilter, { includeLocation: this.options.includeLocation });
-		this.templater = new TemplateParser(this.expressioner);
-		this.astCompiler = this.options.interpreter
-			? new ASTInterpreter(GetFilter)
-			: new ASTCompiler(GetFilter);
+  constructor (options = {}, typeDefs = [untypedDefault]) {
+    this.options = { ...defaultOptions };
+    for (const prop of Object.keys(options)) {
+      this.options[prop] = options[prop];
+    }
+    const typeDict = this.typeDict = {};
+    typeDefs.forEach(typeDef => typeDict[typeDef.name] = typeDef);
+    this.expressioner = new ExpressionParser(GetFilter, { includeLocation: this.options.includeLocation });
+    this.templater = new TemplateParser(this.expressioner);
+    this.astCompiler = this.options.interpreter
+      ? new ASTInterpreter(GetFilter)
+      : new ASTCompiler(GetFilter);
 
-		/**
-		 * A cache containing all compiled functions. The src is used as key.
-		 * Set this to false to disable the cache.
-		 *
-		 * @type {object}
-		 */
-		this.cache = createMap();
-	}
+    /**
+     * A cache containing all compiled functions. The src is used as key.
+     * Set this to false to disable the cache.
+     *
+     * @type {object}
+     */
+    this.cache = createMap();
+  }
 
-	/**
-	 * Lexes and parses src and returns an AST.
-	 *
-	 * @param {string} src
-	 * @returns {object}
-	 */
-	parseExpression (src) {
-		if (typeof src !== "string") {
-			throw new TypeError(`src must be a string; instead saw '${typeof src}'`)
-		}
-		const ast = this.expressioner.ast(src);
-		return ast
-	}
+  /**
+   * Lexes and parses src and returns an AST.
+   *
+   * @param {string} src
+   * @returns {object}
+   */
+  parseExpression (src) {
+    if (typeof src !== "string") {
+      throw new TypeError(`src must be a string; instead saw '${typeof src}'`)
+    }
+    const ast = this.expressioner.ast(src);
+    return ast
+  }
 
-	parseTemplate (src) {
-		if (typeof src !== "string") {
-			throw new TypeError(`src must be a string; instead saw '${typeof src}'`)
-		}
-		const ast = this.templater.ast(src);
-		return ast
-	}
+  parseTemplate (src) {
+    if (typeof src !== "string") {
+      throw new TypeError(`src must be a string; instead saw '${typeof src}'`)
+    }
+    const ast = this.templater.ast(src);
+    return ast
+  }
 
-	extractTemplateLogic (src) {
-		let ast;
-		if (typeof src === 'string') {
-			ast = this.parseTemplate(src);
-		} else if (src && typeof src === 'object') {
-			ast = src;
-		} else {
-			throw new TypeError(`src must be a string or AST object; instead saw '${typeof src}'`)
-		}
-		return extractLogic(ast)
-	}
+  extractTemplateLogic (src) { // accepts either a string or an already-parsed template AST
+    let ast;
+    if (typeof src === 'string') {
+      ast = this.parseTemplate(src);
+    } else if (src && typeof src === 'object') {
+      ast = src;
+    } else {
+      throw new TypeError(`src must be a string or AST object; instead saw '${typeof src}'`)
+    }
+    // HOWEVER, the first thing extractLogic() does is to convert the AST into a (legacy)
+    // content array, which is then simplified using legacy code ported over from Yatte.
+    const logicTree = extractLogic(ast);
+    // Note that extractLogic is mostly legacy code ported over from Yatte.
+    // The first thing it does is convert the given AST into a Yatte content array, and
+    // it also returns a content array. HOWEVER, because those content arrays are more
+    // condensed than TINQ ASTs, we're just returning it directly here rather than
+    // converting it back.
+    return logicTree
+    // At some point we may consider cleaning this up by rewriting extractLogic to work directly
+    // with Tinq's AST format. But for now, we use both.
+  }
 
-	extractData (logicTree, scope) {
-		const importer = new LogicTreeImporter(this);
-		const ast = importer.arrayToBlock(logicTree, AST.Program);
-		// now we can try to use it to extract the necessary data from a data context:
-		const extractor = new DataExtractor();
-		const result = extractor.assembleData(ast, scope);
-		return result
-	}
+  logicToTemplateAst (logicTree) {
+    const importer = new LogicTreeImporter(this);
+    return importer.arrayToBlock(logicTree, AST.Program)
+  }
 
-	compileExpression (src) {
-		let func = this.cache && this.cache[src];
-		if (!func) {
-			let ast;
-			if (typeof src === 'string') {
-				ast = this.parseExpression(src);
-			} else if (src && typeof src === 'object') {
-				ast = src;
-			} else {
-				throw new TypeError(`src must be a string or AST object; instead saw '${typeof src}'`)
-			}
-			func = this.compile(ast);
-			if (func) {
-				func.normalized = AST.serialize(ast);
-			}
-			if (this.cache) {
-				this.cache[src] = func;
-				if (src !== func.normalized) {
-					this.cache[func.normalized] = func;
-				}
-			}
-		}
-		return func
-	}
+  extractData (ast, scope, externals = undefined) { // accepts EITHER a TINQ AST or a Yatte-style logic tree
+    if (Array.isArray(ast)) {
+      ast = this.logicToTemplateAst(ast);
+    } // (else _hopefully_ the ast is already simplified)
+    // use the ast to extract the necessary data from a data context:
+    const extractor = new DataExtractor(externals);
+    const result = extractor.assembleData(ast, scope);
+    return result
+  }
 
-	compileTemplate (src) {
-		let ast;
-		if (typeof src === 'string') {
-			ast = this.parseTemplate(src);
-		} else if (src && typeof src === 'object') {
-			ast = src;
-		} else {
-			throw new TypeError(`src must be a string or AST object; instead saw '${typeof src}'`)
-		}
-		return this.compile(ast)
-	}
+  compileExpression (src) {
+    let func = this.cache && this.cache[src];
+    if (!func) {
+      let ast;
+      if (typeof src === 'string') {
+        ast = this.parseExpression(src);
+      } else if (src && typeof src === 'object') {
+        ast = src;
+      } else {
+        throw new TypeError(`src must be a string or AST object; instead saw '${typeof src}'`)
+      }
+      func = this.compile(ast);
+      if (func) {
+        func.normalized = AST.serialize(ast);
+      }
+      if (this.cache) {
+        this.cache[src] = func;
+        if (src !== func.normalized) {
+          this.cache[func.normalized] = func;
+        }
+      }
+    }
+    return func
+  }
 
-	/**
-	 * Compiles ast and returns a function that executes ast on a target object.
-	 * The compiled function is cached under compile.cache[src] to speed up further calls.
-	 *
-	 * @param {string} src
-	 * @returns {function}
-	 */
-	compile (ast) {
-		if (typeof ast !== 'object') {
-			throw new TypeError("ast must be an already-parsed AST object; instead saw '" + typeof ast + "'")
-		}
-		let func = this.astCompiler.compile(ast);
-		return func
-	}
+  compileTemplate (src) {
+    let ast;
+    if (typeof src === 'string') {
+      ast = this.parseTemplate(src);
+    } else if (src && typeof src === 'object') {
+      ast = src;
+    } else {
+      throw new TypeError(`src must be a string or AST object; instead saw '${typeof src}'`)
+    }
+    return this.compile(ast)
+  }
+
+  /**
+   * Compiles ast and returns a function that executes ast on a target object.
+   * The compiled function is cached under compile.cache[src] to speed up further calls.
+   *
+   * @param {string} src
+   * @returns {function}
+   */
+  compile (ast) {
+    if (typeof ast !== 'object') {
+      throw new TypeError("ast must be an already-parsed AST object; instead saw '" + typeof ast + "'")
+    }
+    let func = this.astCompiler.compile(ast);
+    return func
+  }
+
+  compileExternal (templateInfo, ast) {
+    let result;
+    if (typeof ast === 'object') { // use AST to evaluate & extract data from scope
+      result = scope => {
+        // look up parentExternals in scope, create it if not there already
+        scope = useScope(scope);
+        const root = scope.root();
+        const isDependant = Boolean(root.externals);
+        const externals = isDependant ? root.externals : (root.externals = []);
+        const extracted = this.extractData(ast, scope, externals);
+        extracted.template = templateInfo;
+        if (isDependant) {
+          return externals.find(ex => ex.isEqualTo(extracted)) || extracted
+        } // else
+        if (externals.length === 0) return extracted
+        return [...externals, extracted]
+      };
+    } else if (typeof ast === 'string') { // AST is a template; evaluate that template to get its text result:
+      const evaluate = this.compileTemplate(ast);
+      result = scope => new ExternalFile(templateInfo, evaluate(scope)); // and return that result as its own external
+    }
+    result.ast = true;
+    // so when result is seen as a function during evaluation, it will be recognized as expecting the scope
+    // as its parameter (and will therefore be called automatically, as we want it to be)
+    return result
+  }
 }
 
 exports.AST = AST;
 exports.EnumerationScope = EnumerationScope;
 exports.ExpressionParser = ExpressionParser;
-exports.ExternalBinary = ExternalBinary;
+exports.ExternalFile = ExternalFile;
 exports.GetFilter = GetFilter;
 exports.Scope = Scope$1;
 exports.TemplateParser = TemplateParser;

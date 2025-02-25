@@ -1,4 +1,4 @@
-import { ExternalBinary } from './scope.mjs'
+import { ExternalFile } from './scope.mjs'
 import { isDate, dateFormat } from './utils.mjs'
 
 export class DataAggregator {
@@ -84,31 +84,35 @@ export class DataAggregator {
     return this.stack.length > 0 ? this.stack[this.stack.length - 1] : null
   }
 
-  toJson () {
+  toJson (composeTextExternals = false) {
     return JSON.stringify(this.data, (key, value) => {
-      if (value instanceof ExternalBinary) {
-        const { scope, assembler, ...orig } = value
-        if (assembler && !orig.data) {
-          orig.data = assembler.data.data
+      if (value instanceof ExternalFile) {
+        if (typeof value.data === 'string' && composeTextExternals) {
+          return value.data
         }
-        return orig
+        let uri = `tinq://ExternalFile/${value.id}`
+        if (value.KeepSections) {
+          uri += '?KeepSections=true'
+        }
+        return uri
       } // else
       return value
     })
   }
 
-  toXml (elementName) {
-    return '<?xml version="1.0"?>' + this.serializeXmlElement(elementName, this.data)
+  toXml (elementName = 'top', composeTextExternals = false) {
+    return '<?xml version="1.0"?>' + this.serializeXmlElement(elementName, this.data, composeTextExternals)
   }
 
-  serializeXmlElement (ident, value) {
+  serializeXmlElement (ident, value, cte) {
+    const name = validXmlNameRegex.test(ident) ? ident : encodeToValidXmlName(ident)
     if (value === '' || value === null || value === undefined /* || (Array.isArray(value) && value.length === 0) */) {
-      return `<${ident}/>`
+      return `<${name}/>`
     } // else
-    return `<${ident}>${this.serializeXmlValue(value)}</${ident}>`
+    return `<${name}>${this.serializeXmlValue(value, cte)}</${name}>`
   }
 
-  serializeXmlValue (value) {
+  serializeXmlValue (value, cte) {
     const valueType = Array.isArray(value.valueOf()) ? 'array' : isDate(value) ? 'date' : typeof value.valueOf()
     switch (valueType) {
       case 'string':
@@ -120,16 +124,19 @@ export class DataAggregator {
       case 'boolean':
         return value ? 'true' : 'false'
       case 'object':
-        return this.serializeXmlObject(value)
+        return this.serializeXmlObject(value, cte)
       case 'array': {
         const itemIdent = value._ident
-        return value.map(item => this.serializeXmlElement(itemIdent, item)).join('')
+        return value.map(item => this.serializeXmlElement(itemIdent, item, cte)).join('')
       }
     }
   }
 
-  serializeXmlObject (obj) {
-    if (obj instanceof ExternalBinary) {
+  serializeXmlObject (obj, cte) {
+    if (obj instanceof ExternalFile) {
+      if (typeof obj.data === 'string' && cte) {
+        return obj.data
+      } // else
       let uri = `oxpt://DocumentAssembler/insert/${obj.id}`
       if (obj.KeepSections) {
         uri += '?KeepSections=true'
@@ -159,4 +166,20 @@ const escapeXml = function (str) {
       case '"': return '&quot;'
     }
   })
+}
+
+const validXmlNameRegex = /^[a-zA-Z_][\w.-]*$/
+
+const encodeToValidXmlName = function (input) {
+  return input.split('').map(char => {
+    const code = char.charCodeAt(0);
+    if ((code >= 65 && code <= 90) || // A-Z
+        (code >= 97 && code <= 122) || // a-z
+        (code >= 48 && code <= 57) || // 0-9
+        char === '.' || char === '-' || char === '_') {
+      return char
+    } else {
+      return '_' + code.toString(16).toUpperCase()
+    }
+  }).join('')
 }
