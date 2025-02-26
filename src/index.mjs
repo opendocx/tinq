@@ -199,4 +199,24 @@ export class Tinq {
     // as its parameter (and will therefore be called automatically, as we want it to be)
     return result
   }
+
+  compileBatch (batchTemplate) {
+    const evaluate = this.compileExternal('batch', this.parseTemplate(batchTemplate))
+    const result = scope => {
+      const interim = evaluate(scope)
+      if (Array.isArray(interim)) {
+        const batch = interim.pop()
+        const index = interim.reduce((acc, curr) => {
+          acc[curr.id] = curr
+          return acc
+        }, {})
+        batch.requires.forEach((id, idx) => index[id].outputOrder = idx + 1)
+      } else {
+        interim.outputOrder = 1
+        interim = [interim]
+      }
+      return interim
+    }
+    return result
+  }
 }
