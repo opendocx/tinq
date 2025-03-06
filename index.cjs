@@ -1866,8 +1866,8 @@ class ExpressionParser {
 	}
 }
 
-function useScope (scope) {
-	return scope instanceof Scope$1 ? scope : new Scope$1(scope)
+function useScope (valueOrScope) {
+	return valueOrScope instanceof Scope$1 ? valueOrScope : scopeFactory.createScope(valueOrScope)
 }
 
 let Scope$1 = class Scope {
@@ -1906,7 +1906,7 @@ let Scope$1 = class Scope {
       }
       throw new Error('Cannot reuse conflicting Scope. What are you trying to do?')
     }
-    return new Scope(value, this)
+    return scopeFactory.createScope(value, this)
   }
   
   lookupBase (ident, baseTypeName) {
@@ -1924,7 +1924,7 @@ let Scope$1 = class Scope {
     const base = this.lookupBase(ident, baseTypeName);
     return base
       ? base.getOwnScope(ident)
-      : new Scope(null) // identifier not found; return null scope (?)
+      : scopeFactory.createScope(null) // identifier not found; return null scope (?)
   }
 
   lookupValue (ident, baseTypeName) { // this gets called at compile-time to resolve an identifier WITHOUT CONTEXT
@@ -1933,19 +1933,15 @@ let Scope$1 = class Scope {
   }
 
   getOwnScope (ident) { // == old lookupScope + getOwnValue + pushScope
-    if (ident === undefined || ident === null || ident === '') throw new Error('Identifier required')
-    if (isNaN(ident)) { // normal use case -- ident is alphanumeric identifier
-      const result = ident === '_parent'
-        ? this._parent
-        : new Scope(this.getOwnValue(ident), this);
-      result.name = ident;
-      return result
-    } else { // ident is numeric
-      if (this.type !== 'array' && this.type !== 'null') {
-        throw new Error(`Requested numeric element of ${this.type} (non-array)`)
-      }
-      return new EnumerationScope(this._parent, this.value && this.value[ident], +ident, this.length, this.punc)
+    Scope.validateIdent(ident, this.type);
+    if (!isNaN(ident)) { // ident is numeric -- array index
+      return scopeFactory.createEnumScope(this._parent, this.value && this.value[ident], +ident, this.length, this.punc)
     }
+    if (ident === '_parent') return this._parent // special case
+    // else normal use case -- ident is alphanumeric identifier
+    const result = scopeFactory.createScope(this.getOwnValue(ident), this);
+    result.name = ident;
+    return result
   }
 
   forEachScope (enumScopeFunc) {
@@ -2025,6 +2021,18 @@ let Scope$1 = class Scope {
 
   valueOf () {
     return this.value
+  }
+
+  static validateIdent (ident, type) {
+    const t = typeof ident;
+    if (t !== 'string' && t !== 'number') throw new Error(`received a ${t} instead of an identifier`)
+    if (isNaN(ident)) { // alphanumeric identifier
+      if (!ident) throw new Error('Identifier required')
+    } else { // ident is numeric -- array index
+      if (type !== 'array' && type !== 'null') {
+        throw new Error(`Requested numeric element of ${type} (non-array)`)
+      }
+    }
   }
 };
 
@@ -2116,6 +2124,33 @@ class ExternalFile {
     // placeholder to be inserted so the resulting files can be composed later.
   }
 }
+
+class ScopeFactory {
+  constructor() {
+    this.ScopeClass = Scope$1;
+    this.EnumScopeClass = EnumerationScope;
+  }
+
+  registerScopeClass (derivedScopeClass) {
+    this.ScopeClass = derivedScopeClass;
+  }
+
+  registerEnumScopeClass (derivedScopeClass) {
+    this.EnumScopeClass = derivedScopeClass;
+  }
+
+  createScope (value, parentScope) {
+    const ScopeConstructor = this.ScopeClass;
+    return new ScopeConstructor(value, parentScope)
+  }
+
+  createEnumScope (parent, item, index0, count, punc) {
+    const EnumScopeConstructor = this.EnumScopeClass;
+    return new EnumScopeConstructor(parent, item, index0, count, punc)
+  }
+}
+
+const scopeFactory = new ScopeFactory();
 
 class ASTInterpreterBase {
   constructor () {
@@ -4563,3 +4598,4 @@ exports.GetFilter = GetFilter;
 exports.Scope = Scope$1;
 exports.TemplateParser = TemplateParser;
 exports.Tinq = Tinq;
+exports.scopeFactory = scopeFactory;
