@@ -411,41 +411,43 @@ describe("YEvaluate Filters", function() {
           })
         })
 
-        // reducer implementation currently has errors; fix these!
-        // describe('reduce filter', function () {
-        //   it('sums a series of numbers (no initial value)', function () {
-        //     evaluate = compiler.compile('array|reduce:_result+this')
-        //     const data = { array: [0, 1, 2, 3, 4] }
-        //     const value = evaluate(data, data)
-        //     assert.strictEqual(value, 10)
-        //   })
-        //   it('sums a series of numbers (with initial value)', function () {
-        //     evaluate = compiler.compile('array|reduce:_result+this:10')
-        //     const data = { array: [0, 1, 2, 3, 4] }
-        //     const value = evaluate(data, data)
-        //     assert.strictEqual(value, 20)
-        //   })
-        //   it('flattens a nested array (no initial value)', function () {
-        //     evaluate = compiler.compile('array|reduce:_result.concat(this)')
-        //     const data = { array: [[0], [1, 2], [3, 4]] }
-        //     const value = evaluate(data, data)
-        //     assert.deepStrictEqual(value, [0, 1, 2, 3, 4])
-        //   })
-        //   it('flattens a nested array (with initial value)', function () {
-        //     evaluate = compiler.compile('array|reduce:_result.concat(this):[]')
-        //     const data = { array: [[0], [1, 2], [3, 4]] }
-        //     const value = evaluate(data, data)
-        //     assert.deepStrictEqual(value, [0, 1, 2, 3, 4])
-        //   })
-        //   it('flattens a nested array in an object array', function () {
-        //     evaluate = compiler.compile('array|reduce:_result.concat(nested):[]')
-        //     const data = { array: [{ nested: [0] }, { nested: [1, 2] }, { nested: [3, 4] }] }
-        //     let value = evaluate(data)
-        //     // todo: figure out how not to have to do this massaging prior to testing the value:
-        //     value = value.map(item => (item && ('__value' in item)) ? (item.__value && item.__value.valueOf()) : item)
-        //     assert.deepStrictEqual(value, [0, 1, 2, 3, 4])
-        //   })
-        // })
+        describe('reduce filter', function () {
+          it('sums a series of numbers (no initial value)', function () {
+            evaluate = tinq.compileExpression('array|reduce:_result+this')
+            const data = { array: [0, 1, 2, 3, 4] }
+            const value = evaluate(data)
+            assert.strictEqual(value, 10)
+          })
+          it('sums a series of numbers (with initial value)', function () {
+            evaluate = tinq.compileExpression('array|reduce:_result+this:10')
+            const data = { array: [0, 1, 2, 3, 4] }
+            const value = evaluate(data)
+            assert.strictEqual(value, 20)
+          })
+          it('flattens a nested array (no initial value)', function () {
+            evaluate = tinq.compileExpression('array|reduce:_result.concat(this)')
+            const data = { array: [[0], [1, 2], [3, 4]] }
+            const value = evaluate(data)
+            assert.deepStrictEqual(value, [0, 1, 2, 3, 4])
+          })
+          it('flattens a nested array (with initial value)', function () {
+            evaluate = tinq.compileExpression('array|reduce:_result.concat(this):[]')
+            const data = { array: [[0], [1, 2], [3, 4]] }
+            const value = evaluate(data)
+            assert.deepStrictEqual(value, [0, 1, 2, 3, 4])
+          })
+          it('flattens a nested array in an object array', function () {
+            evaluate = tinq.compileExpression('array|reduce:_result.concat(nested):[]')
+            const data = { array: [{ nested: [0] }, { nested: [1, 2] }, { nested: [3, 4] }] }
+            let value = evaluate(data)
+            assert.deepStrictEqual(value, [0, 1, 2, 3, 4])
+          })
+          it('concatenates a series of object properties (with initial value)', function () {
+            evaluate = tinq.compileExpression('Children|reduce:_result+Name:""')
+            const value = evaluate(data_Children)
+            assert.strictEqual(value, "JohnAliceEricTedMarkYolandaBeth")
+          })
+        })
 
         const data_Children = {
           Children: [

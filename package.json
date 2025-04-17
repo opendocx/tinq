@@ -10,7 +10,8 @@
   },
   "scripts": {
     "test": "mocha test/*.test.mjs -R spec",
-    "test2": "nyc --reporter=lcov --reporter=text-summary mocha"
+    "test2": "nyc --reporter=lcov --reporter=text-summary mocha",
+    "build": "npx rollup ./src/index.mjs --file index.cjs --format cjs"
   },
   "author": {
     "name": "Lowell Stewart",

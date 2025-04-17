@@ -215,11 +215,12 @@ function serializeAstNode (ast, subs = false, isElseIf = false) {
 			return (isElseIf ? '{[elseif ' : '{[if ')
 				+ serializeAstNode(ast.test, subs) + ']}'
 			  + serializeAstNode(ast.consequent, subs)
-				+ ast.alternate
+				+ (ast.alternate
 				  ? ast.alternate.type === AST.ConditionalField
 					  ? '{[elseif ' + serializeAstNode(ast.alternate.test, subs) + ']}' + serializeAstNode(ast.alternate.consequent)
 						: '{[else]}' + serializeAstNode(ast.alternate, subs) + '{[endif]}'
 					: '{[endif]}'
+        )
 		}
     case AST.Literal:
       if (typeof ast.value === 'string') { return '"' + ast.value + '"' }
@@ -1867,10 +1868,10 @@ class ExpressionParser {
 }
 
 function useScope (valueOrScope) {
-	return valueOrScope instanceof Scope$1 ? valueOrScope : scopeFactory.createScope(valueOrScope)
+	return valueOrScope instanceof Scope ? valueOrScope : scopeFactory.createScope(valueOrScope)
 }
 
-let Scope$1 = class Scope {
+class Scope {
   constructor (value, parentScope) {
     if (value instanceof Scope) {
       throw new Error('value is already an instance of Scope')
@@ -2034,9 +2035,9 @@ let Scope$1 = class Scope {
       }
     }
   }
-};
+}
 
-class EnumerationScope extends Scope$1 {
+class EnumerationScope extends Scope {
 	constructor (parent, item, index0, count, punc) {
     super(item, parent);
   	this._index0 = index0;
@@ -2111,8 +2112,8 @@ class ExternalFile {
   }
 
   isEqualTo (that) {
-    // compare based on enumeration of that's properties instead of this,
-    // because we want to match if that has no "id" property even if this does!
+    // compare the things that potentially make a difference in output: the template metadata
+    // (as provided by the caller) and the data requested by that template's logic
     return equal(that.template, this.template) && equal(that.data, this.data)
   }
 
@@ -2127,7 +2128,7 @@ class ExternalFile {
 
 class ScopeFactory {
   constructor() {
-    this.ScopeClass = Scope$1;
+    this.ScopeClass = Scope;
     this.EnumScopeClass = EnumerationScope;
   }
 
@@ -3653,10 +3654,7 @@ function reduce (arrayScope, reducerLambda, initValue = undefined) {
   if (array.length === 0) {
     reduced = initValue;
   } else {
-    const input0 = array[0];
-    const yobj0 = input0 && input0.__yobj;
-    Scope.pushList(array, yobj0 && yobj0.getParentEffective());
-    reduced = array.items.reduce(
+    reduced = array.reduce(
       (result, item, index) => {
         if (index === 0 && initValue === undefined) {
           return item
@@ -4570,7 +4568,10 @@ class Tinq {
   }
 
   compileBatch (batchTemplate) {
-    const evaluate = this.compileExternal('batch', this.parseTemplate(batchTemplate));
+    const evaluate = this.compileExternal('batch', typeof batchTemplate === 'object'
+      ? batchTemplate
+      : this.parseTemplate(batchTemplate)
+    );
     const result = scope => {
       const interim = evaluate(scope);
       if (Array.isArray(interim)) {
@@ -4595,7 +4596,7 @@ exports.EnumerationScope = EnumerationScope;
 exports.ExpressionParser = ExpressionParser;
 exports.ExternalFile = ExternalFile;
 exports.GetFilter = GetFilter;
-exports.Scope = Scope$1;
+exports.Scope = Scope;
 exports.TemplateParser = TemplateParser;
 exports.Tinq = Tinq;
 exports.scopeFactory = scopeFactory;

@@ -326,10 +326,7 @@ function reduce (arrayScope, reducerLambda, initValue = undefined) {
   if (array.length === 0) {
     reduced = initValue
   } else {
-    const input0 = array[0]
-    const yobj0 = input0 && input0.__yobj
-    const list = Scope.pushList(array, yobj0 && yobj0.getParentEffective())
-    reduced = array.items.reduce(
+    reduced = array.reduce(
       (result, item, index) => {
         if (index === 0 && initValue === undefined) {
           return item

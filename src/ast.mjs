@@ -206,11 +206,12 @@ function serializeAstNode (ast, subs = false, isElseIf = false) {
 			return (isElseIf ? '{[elseif ' : '{[if ')
 				+ serializeAstNode(ast.test, subs) + ']}'
 			  + serializeAstNode(ast.consequent, subs)
-				+ ast.alternate
+				+ (ast.alternate
 				  ? ast.alternate.type === AST.ConditionalField
 					  ? '{[elseif ' + serializeAstNode(ast.alternate.test, subs) + ']}' + serializeAstNode(ast.alternate.consequent)
 						: '{[else]}' + serializeAstNode(ast.alternate, subs) + '{[endif]}'
 					: '{[endif]}'
+        )
 		}
     case AST.Literal:
       if (typeof ast.value === 'string') { return '"' + ast.value + '"' }

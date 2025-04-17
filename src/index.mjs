@@ -201,7 +201,10 @@ export class Tinq {
   }
 
   compileBatch (batchTemplate) {
-    const evaluate = this.compileExternal('batch', this.parseTemplate(batchTemplate))
+    const evaluate = this.compileExternal('batch', typeof batchTemplate === 'object'
+      ? batchTemplate
+      : this.parseTemplate(batchTemplate)
+    )
     const result = scope => {
       const interim = evaluate(scope)
       if (Array.isArray(interim)) {

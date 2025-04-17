@@ -250,8 +250,8 @@ export class ExternalFile {
   }
 
   isEqualTo (that) {
-    // compare based on enumeration of that's properties instead of this,
-    // because we want to match if that has no "id" property even if this does!
+    // compare the things that potentially make a difference in output: the template metadata
+    // (as provided by the caller) and the data requested by that template's logic
     return equal(that.template, this.template) && equal(that.data, this.data)
   }
 
