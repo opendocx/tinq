@@ -206,7 +206,7 @@ export class Tinq {
       : this.parseTemplate(batchTemplate)
     )
     const result = scope => {
-      const interim = evaluate(scope)
+      let interim = evaluate(scope)
       if (Array.isArray(interim)) {
         const batch = interim.pop()
         const index = interim.reduce((acc, curr) => {
