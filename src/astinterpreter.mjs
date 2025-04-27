@@ -200,7 +200,7 @@ export class ASTInterpreterBase {
         }
       case AST.CallExpression:
         args = []
-        right = this.recurse(ast.callee, true)
+        right = this.recurse(ast.callee, true) // request scope because we need BOTH the callee function AND the object/context on which it is called, if any. (see .valueOf() and ._parent.valueOf() below)
         ast.arguments.forEach(expr => {
           args.push(self.recurse(expr))
         })
@@ -211,7 +211,9 @@ export class ASTInterpreterBase {
             const argValues = args.map(arg => arg(scope, assign, inputs))
             value = rhs.valueOf().apply(rhs._parent.valueOf(), argValues)
           }
-          return value
+          return wantScope
+            ? useScope(scope).pushScope(value)
+            : value
         }
       case AST.FilterExpression:
         right = this.filters(ast.filter.name)

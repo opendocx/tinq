@@ -382,10 +382,16 @@ export class ASTCompiler {
               })
               expression = right + '.valueOf().call(' + getParentScope(right) + '.valueOf(),'
                 + args.join(',') + ')'
-              self.assignId(intoId, expression)
+              self.assignId(intoId, wantScope
+                ? self.pushScope(expression)
+                : expression
+              )
             },
             function () {
-              self.assignId(intoId, "undefined")
+              self.assignId(intoId, wantScope
+                ? self.pushScope('null')
+                : 'undefined'
+              )
             }
           )
           returnFn(intoId)
