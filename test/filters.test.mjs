@@ -360,20 +360,34 @@ describe("YEvaluate Filters", function() {
             evaluate(data)
           ).to.deep.equal('B')
         })
-        // it('allows lookup of/access to an object in a list with context using the find filter', function () {
-        //   const evaluator = compiler.compile('(table|find:col1==value).col2')
-        //   const data = {
-        //     value: 'b',
-        //     table: [
-        //       { col1: 'a', col2: 'A' },
-        //       { col1: 'b', col2: 'B' },
-        //       { col1: 'c', col2: 'C' },
-        //     ],
-        //   }
-        //   const scope = require('../src/index').Scope.pushObject(data)
-        //   const result = scope.evaluate(evaluator)
-        //   assert.strictEqual(result, 'B')
-        // })
+        it('allows lookup of/access to an object in a list with context using the find filter', function () {
+          evaluate = tinq.compileExpression('(table|find:col1==value).col2')
+          const data = {
+            value: 'b',
+            table: [
+              { col1: 'a', col2: 'A' },
+              { col1: 'b', col2: 'B' },
+              { col1: 'c', col2: 'C' },
+            ],
+          }
+          expect(
+            evaluate(data)
+          ).to.deep.equal('B')
+        })
+        it('allows list filters (which require context) to run on the output of a call expression', function () {
+          evaluate = tinq.compileExpression('[].concat(obj1, obj2, obj3)|filter:col1>"a"')
+          const data = {
+            obj1: { col1: 'a', col2: 'A' },
+            obj2: { col1: 'b', col2: 'B' },
+            obj3: { col1: 'c', col2: 'C' },
+          }
+          expect(
+            evaluate(data)
+          ).to.deep.equal([
+            { col1: 'b', col2: 'B' },
+            { col1: 'c', col2: 'C' }
+          ])
+        })
 
         // for purposes of the group filter's _key, wrapped strings must be simplified, so include wrapped strings...
         const surnameData = {
