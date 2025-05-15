@@ -2104,8 +2104,11 @@ function parseListExample (example) {
 // (3) needs data from inside TINQ's scope to produce this external file
 // (4) (optionally) needs to composite this external output with other output ALSO being created by TINQ
 class ExternalFile {
-  constructor (template, data) {
+  constructor (template, data, fileName) {
     this.template = template;
+    if (fileName) {
+      this.name = fileName;
+    }
     if (data || !('data' in this)) {
       this.data = data;
     }
@@ -4248,11 +4251,11 @@ class DataExtractor extends ASTInterpreterBase {
     this.data = new DataAggregator();
   }
 
-  assembleData (ast, scope) {
+  assembleData (ast, scope, outputName = undefined) {
     let evaluator = this.compile(ast);
     evaluator(useScope(scope));
     delete this.data.stack;
-    const wrapper = new ExternalFile(null, this.data);
+    const wrapper = new ExternalFile(null, this.data, outputName);
     if (this.requires.length > 0) {
       wrapper.requires = this.requires.map(e => e.id);
     }
@@ -4486,13 +4489,13 @@ class Tinq {
     return importer.arrayToBlock(logicTree, AST.Program)
   }
 
-  extractData (ast, scope, externals = undefined) { // accepts EITHER a TINQ AST or a Yatte-style logic tree
+  extractData (ast, scope, externals = undefined, outputName = undefined) { // accepts EITHER a TINQ AST or a Yatte-style logic tree
     if (Array.isArray(ast)) {
       ast = this.logicToTemplateAst(ast);
     } // (else _hopefully_ the ast is already simplified)
     // use the ast to extract the necessary data from a data context:
     const extractor = new DataExtractor(externals);
-    const result = extractor.assembleData(ast, scope);
+    const result = extractor.assembleData(ast, scope, outputName);
     return result
   }
 
@@ -4548,8 +4551,11 @@ class Tinq {
     return func
   }
 
-  compileExternal (templateInfo, ast) {
-    let result;
+  compileExternal (templateInfo, ast, fileName = undefined) {
+    let result, evaluateName;
+    if (typeof fileName === 'string') {
+      evaluateName = this.compileTemplate(fileName);
+    }
     if (typeof ast === 'object') { // use AST to evaluate & extract data from scope
       result = scope => {
         // look up parentExternals in scope, create it if not there already
@@ -4557,7 +4563,8 @@ class Tinq {
         const root = scope.root();
         const isDependant = Boolean(root.externals);
         const externals = isDependant ? root.externals : (root.externals = []);
-        const extracted = this.extractData(ast, scope, externals);
+        const extracted = this.extractData(ast, scope, externals,
+          evaluateName && evaluateName(scope));
         extracted.template = templateInfo;
         if (isDependant) {
           return externals.find(ex => ex.isEqualTo(extracted)) || extracted
@@ -4567,7 +4574,8 @@ class Tinq {
       };
     } else if (typeof ast === 'string') { // AST is a template; evaluate that template to get its text result:
       const evaluate = this.compileTemplate(ast);
-      result = scope => new ExternalFile(templateInfo, evaluate(scope)); // and return that result as its own external
+      result = scope => new ExternalFile(templateInfo, evaluate(scope),
+        evaluateName && evaluateName(scope)); // and return that result as its own external
     }
     result.ast = true;
     // so when result is seen as a function during evaluation, it will be recognized as expecting the scope

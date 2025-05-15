@@ -15,11 +15,11 @@ export class DataExtractor extends ASTInterpreterBase {
     this.data = new DataAggregator()
   }
 
-  assembleData (ast, scope) {
+  assembleData (ast, scope, outputName = undefined) {
     let evaluator = this.compile(ast)
     evaluator(useScope(scope))
     delete this.data.stack
-    const wrapper = new ExternalFile(null, this.data)
+    const wrapper = new ExternalFile(null, this.data, outputName)
     if (this.requires.length > 0) {
       wrapper.requires = this.requires.map(e => e.id)
     }

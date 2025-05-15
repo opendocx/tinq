@@ -111,13 +111,13 @@ export class Tinq {
     return importer.arrayToBlock(logicTree, AST.Program)
   }
 
-  extractData (ast, scope, externals = undefined) { // accepts EITHER a TINQ AST or a Yatte-style logic tree
+  extractData (ast, scope, externals = undefined, outputName = undefined) { // accepts EITHER a TINQ AST or a Yatte-style logic tree
     if (Array.isArray(ast)) {
       ast = this.logicToTemplateAst(ast)
     } // (else _hopefully_ the ast is already simplified)
     // use the ast to extract the necessary data from a data context:
     const extractor = new DataExtractor(externals)
-    const result = extractor.assembleData(ast, scope)
+    const result = extractor.assembleData(ast, scope, outputName)
     return result
   }
 
@@ -173,8 +173,11 @@ export class Tinq {
     return func
   }
 
-  compileExternal (templateInfo, ast) {
-    let result
+  compileExternal (templateInfo, ast, fileName = undefined) {
+    let result, evaluateName
+    if (typeof fileName === 'string') {
+      evaluateName = this.compileTemplate(fileName)
+    }
     if (typeof ast === 'object') { // use AST to evaluate & extract data from scope
       result = scope => {
         // look up parentExternals in scope, create it if not there already
@@ -182,7 +185,8 @@ export class Tinq {
         const root = scope.root()
         const isDependant = Boolean(root.externals)
         const externals = isDependant ? root.externals : (root.externals = [])
-        const extracted = this.extractData(ast, scope, externals)
+        const extracted = this.extractData(ast, scope, externals,
+          evaluateName && evaluateName(scope))
         extracted.template = templateInfo
         if (isDependant) {
           return externals.find(ex => ex.isEqualTo(extracted)) || extracted
@@ -192,7 +196,8 @@ export class Tinq {
       }
     } else if (typeof ast === 'string') { // AST is a template; evaluate that template to get its text result:
       const evaluate = this.compileTemplate(ast)
-      result = scope => new ExternalFile(templateInfo, evaluate(scope)) // and return that result as its own external
+      result = scope => new ExternalFile(templateInfo, evaluate(scope),
+        evaluateName && evaluateName(scope)) // and return that result as its own external
     }
     result.ast = true
     // so when result is seen as a function during evaluation, it will be recognized as expecting the scope

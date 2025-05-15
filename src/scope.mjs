@@ -242,8 +242,11 @@ export function parseListExample (example) {
 // (3) needs data from inside TINQ's scope to produce this external file
 // (4) (optionally) needs to composite this external output with other output ALSO being created by TINQ
 export class ExternalFile {
-  constructor (template, data) {
+  constructor (template, data, fileName) {
     this.template = template
+    if (fileName) {
+      this.name = fileName
+    }
     if (data || !('data' in this)) {
       this.data = data
     }
