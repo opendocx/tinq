@@ -71,7 +71,7 @@ export class DataExtractor extends ASTInterpreterBase {
     if (value === '') {
       this.data.set(ident, undefined)
     } else if (typeof value === 'object') { // setContent should only be used to output simple scalar values
-      this.data.set(ident, value.toString()) // probably bad input; convert to a string representation
+      this.data.set(ident, String(value)) // possibly bad input; coerce to string representation
     } else {
       this.data.set(ident, value)
     }

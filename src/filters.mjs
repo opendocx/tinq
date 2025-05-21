@@ -15,19 +15,19 @@ export default {
 
 function upper (input) {
   if (!input) return input
-  if (typeof input !== 'string') input = input.toString()
+  if (typeof input !== 'string') input = String(input)
   return input.toUpperCase()
 }
 
 function lower (input) {
   if (!input) return input
-  if (typeof input !== 'string') input = input.toString()
+  if (typeof input !== 'string') input = String(input)
   return input.toLowerCase()
 }
 
 function initcap (input, forceLower = false) {
   if (!input) return input
-  if (typeof input !== 'string') input = input.toString()
+  if (typeof input !== 'string') input = String(input)
   if (forceLower) input = input.toLowerCase()
   return input.charAt(0).toUpperCase() + input.slice(1)
 }
@@ -44,7 +44,7 @@ const UnicodeWordChar = /\p{L}|\p{N}/u
 
 function titlecaps (input, forceLower = false) {
   if (!input) return input
-  if (typeof input !== 'string') input = input.toString()
+  if (typeof input !== 'string') input = String(input)
   if (forceLower) input = input.toLowerCase()
   return input.replace(TitleCapRegEx, s => {
     // console.log(s)

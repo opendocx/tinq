@@ -155,7 +155,7 @@ const escapeXml = function (str) {
   str = str.valueOf()
   if (typeof str !== 'string') {
     console.log(`Unexpected: while aggregating, escapeXml called on a ${typeof str}!`)
-    str = str.toString()
+    str = String(str)
   }
   return str.replace(/[<>&'"]/g, function (c) {
     switch (c) {

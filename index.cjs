@@ -211,7 +211,7 @@ function serializeAstNode (ast, subs = false, isElseIf = false) {
 			return (ast.value && ast.value.raw) || ast.value
     case AST.ContentField:
       return '{[' + serializeAstNode(ast.expression, subs) + ']}'
-		case AST.ConditionalField: {
+		case AST.ConditionalField:
 			return (isElseIf ? '{[elseif ' : '{[if ')
 				+ serializeAstNode(ast.test, subs) + ']}'
 			  + serializeAstNode(ast.consequent, subs)
@@ -221,11 +221,12 @@ function serializeAstNode (ast, subs = false, isElseIf = false) {
 						: '{[else]}' + serializeAstNode(ast.alternate, subs) + '{[endif]}'
 					: '{[endif]}'
         )
-		}
+    case AST.ListField:
+      return '{[list ' + serializeAstNode(ast.expression, subs) + ']}' + serializeAstNode(ast.content) + '{[endlist]}'
     case AST.Literal:
       if (typeof ast.value === 'string') { return '"' + ast.value + '"' }
       if (ast.value === null) { return 'null' }
-      return ast.value.toString()
+      return String(ast.value)
     case AST.Identifier:
       return ast.name
     case AST.MemberExpression:
@@ -3354,19 +3355,19 @@ var filters = {
 
 function upper (input) {
   if (!input) return input
-  if (typeof input !== 'string') input = input.toString();
+  if (typeof input !== 'string') input = String(input);
   return input.toUpperCase()
 }
 
 function lower (input) {
   if (!input) return input
-  if (typeof input !== 'string') input = input.toString();
+  if (typeof input !== 'string') input = String(input);
   return input.toLowerCase()
 }
 
 function initcap (input, forceLower = false) {
   if (!input) return input
-  if (typeof input !== 'string') input = input.toString();
+  if (typeof input !== 'string') input = String(input);
   if (forceLower) input = input.toLowerCase();
   return input.charAt(0).toUpperCase() + input.slice(1)
 }
@@ -3383,7 +3384,7 @@ const UnicodeWordChar = /\p{L}|\p{N}/u;
 
 function titlecaps (input, forceLower = false) {
   if (!input) return input
-  if (typeof input !== 'string') input = input.toString();
+  if (typeof input !== 'string') input = String(input);
   if (forceLower) input = input.toLowerCase();
   return input.replace(TitleCapRegEx, s => {
     // console.log(s)
@@ -4212,7 +4213,7 @@ const escapeXml = function (str) {
   str = str.valueOf();
   if (typeof str !== 'string') {
     console.log(`Unexpected: while aggregating, escapeXml called on a ${typeof str}!`);
-    str = str.toString();
+    str = String(str);
   }
   return str.replace(/[<>&'"]/g, function (c) {
     switch (c) {
@@ -4307,7 +4308,7 @@ class DataExtractor extends ASTInterpreterBase {
     if (value === '') {
       this.data.set(ident, undefined);
     } else if (typeof value === 'object') { // setContent should only be used to output simple scalar values
-      this.data.set(ident, value.toString()); // probably bad input; convert to a string representation
+      this.data.set(ident, String(value)); // possibly bad input; coerce to string representation
     } else {
       this.data.set(ident, value);
     }

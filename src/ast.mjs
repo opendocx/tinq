@@ -202,7 +202,7 @@ function serializeAstNode (ast, subs = false, isElseIf = false) {
 			return (ast.value && ast.value.raw) || ast.value
     case AST.ContentField:
       return '{[' + serializeAstNode(ast.expression, subs) + ']}'
-		case AST.ConditionalField: {
+		case AST.ConditionalField:
 			return (isElseIf ? '{[elseif ' : '{[if ')
 				+ serializeAstNode(ast.test, subs) + ']}'
 			  + serializeAstNode(ast.consequent, subs)
@@ -212,11 +212,12 @@ function serializeAstNode (ast, subs = false, isElseIf = false) {
 						: '{[else]}' + serializeAstNode(ast.alternate, subs) + '{[endif]}'
 					: '{[endif]}'
         )
-		}
+    case AST.ListField:
+      return '{[list ' + serializeAstNode(ast.expression, subs) + ']}' + serializeAstNode(ast.content) + '{[endlist]}'
     case AST.Literal:
       if (typeof ast.value === 'string') { return '"' + ast.value + '"' }
       if (ast.value === null) { return 'null' }
-      return ast.value.toString()
+      return String(ast.value)
     case AST.Identifier:
       return ast.name
     case AST.MemberExpression:
