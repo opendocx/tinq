@@ -133,6 +133,35 @@ describe("YEvaluate Filters", function() {
             assert.strictEqual(evaluate({ num: NaN }), null)
           })
         
+          it('cardinaldec', function () {
+            evaluate = tinq.compileExpression('num|cardinaldec:places:zpad:sep')
+            assert.strictEqual(evaluate({ num: 12.3456 }), "twelve") // 12.3456|cardinaldec
+            assert.strictEqual(evaluate({ num: 12.3456, places: 2 }), "twelve point three five") // 12.3456|cardinaldec:2
+            assert.strictEqual(evaluate({ num: 12.99 }), "thirteen") // 12.99|cardinaldec
+            assert.strictEqual(evaluate({ num: 12.99, places: 2 }), "twelve point nine nine") // 12.99|cardinaldec:2
+            assert.strictEqual(evaluate({ num: 12.99, places: 1 }), "thirteen") // 12.99|cardinaldec:1
+            assert.strictEqual(evaluate({ num: 12.99, places: 1, zpad: true }), "thirteen point zero") // 12.99|cardinaldec:1:true
+            assert.strictEqual(evaluate({ num: 12.3456, places: 3, zpad: false, sep: "mark" }), "twelve mark three four six") // 12.3456|cardinaldec:3:false:"mark"
+            assert.strictEqual(evaluate({ num: 12.3456, places: 5, zpad: true, sep: "" }), "twelve three four five six zero") // 12.3456|cardinaldec:5:true:""
+          })
+
+          it('cardinalcur', function () {
+            const evaluate = tinq.compileExpression('num|cardinalcur:dname:cname:exact:sep')
+            assert.strictEqual(evaluate({ num: 12.3456, dname: "dollars", cname: "cents" }), "twelve dollars and thirty-five cents")
+            assert.strictEqual(evaluate({ num: 12.3456, dname: "dollars" }), "twelve dollars")
+            assert.strictEqual(evaluate({ num: 12.999, dname: "pounds", cname: "pence" }), "thirteen pounds")
+            assert.strictEqual(evaluate({ num: 12.999, dname: "pounds" }), "thirteen pounds")
+            assert.strictEqual(evaluate({ num: 12.999, dname: "pounds", cname: "pence", exact: "only" }), "thirteen pounds only")
+            assert.strictEqual(evaluate({ num: 1.01, dname: "dollars", cname: "cents" }), "one dollar and one cent") // ("dollar" derived from "dollars" by dropping the "s", same for "cent")
+            assert.strictEqual(evaluate({ num: 1.01, dname: "pounds", cname: "pence" }), "one pound and one pence") // ("pound" derived from "pounds", "pence" used as-is)
+            assert.strictEqual(evaluate({ num: 2.01, dname: "złote/złoty", cname: "grosze/grosz" }), "two złote and one grosz") // (plural and singular units can be specified together using / separator)
+            assert.strictEqual(evaluate({ num: 12, dname: "dollars", cname: "cents" }), "twelve dollars")
+            assert.strictEqual(evaluate({ num: 12, dname: "dollars", cname: "cents", exact: "and no cents" }), "twelve dollars and no cents")
+            assert.strictEqual(evaluate({ num: 12, dname: "dollars", cname: "cents", exact: "exactly", sep: "+" }), "twelve dollars exactly")
+            assert.strictEqual(evaluate({ num: 12.01, dname: "dollars", cname: "cents", exact: "exactly", sep: "+" }), "twelve dollars + one cent")
+            assert.strictEqual(evaluate({ num: 12.01, dname: "pounds", cname: "pence", exact: "exactly", sep: "" }), "twelve pounds one pence")
+          })
+
           it('ordinal', function () {
             evaluate = tinq.compileExpression('num|ordinal')
             assert.strictEqual(evaluate({ num: 1 }), 'first')

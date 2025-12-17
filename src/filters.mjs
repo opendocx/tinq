@@ -8,7 +8,11 @@ import { unEscapeQuotes, isIterable } from './utils.mjs'
 // define built-in filters
 export default {
   // regular (scalar value) filters
-  upper, lower, initcap, titlecaps, format, cardinal, ordinal, ordsuffix, else: else_filter, contains, punc, keepsections, 
+  upper, lower, initcap, titlecaps, format,
+  cardinal, ordinal, ordsuffix,
+  cardinaldec, cardinalcur,
+  round, truncate, // fractional,
+  else: else_filter, contains, punc, keepsections, 
   // list (array) filters
   sort, filter, find, any, every, map, group, reduce,
 }
@@ -164,6 +168,113 @@ function ordsuffix (input) {
     default: return 'th'
   }
 }
+
+function cardinaldec (input, places, zpad, separator) {
+  const opts = { places, round: true }
+  const num = truncOrRound(input, opts)
+  if (num === null || typeof num === 'undefined') return num
+  // convert num to string & split into parts
+  const str = num.toString() // NOT locale string!
+  const parts = str.split('.')
+  if (parts.length < 2 && !zpad) { // no fractional part
+    return numWords.toWords(num, { useCommas: false })
+  }
+  places = opts.places
+  // check separator
+  separator = getStringArg(separator, 'point')
+  if (separator === null) return null // invalid (non-string) separator
+  let result = numWords.toWords(Number.parseInt(parts[0]), { useCommas: false })
+  if (separator) result += ' ' + separator
+  const digits = parts.length < 2 ? [] : parts[1].split('')
+  let current = 0
+  while (current < digits.length) {
+    result += ' ' + numWords.toWords(Number.parseInt(digits[current++]))
+  }
+  if (zpad && current < places) {
+    const str0 = ' ' + numWords.toWords(0)
+    while (current++ < places) {
+      result += str0
+    }
+  }
+  return result
+}
+
+function cardinalcur (input, dollarsN, centsN, exactly, separator) {
+  // check dollarsN (required string)
+  dollarsN = dollarsN && dollarsN.valueOf()
+  if (!dollarsN || typeof dollarsN !== 'string') return null
+  let [dp, ds] = dollarsN.split('/')
+  if (!ds) {
+    ds = dp.toLowerCase().endsWith('s') ? dp.slice(0, -1) : dp
+  }
+  // check centsN (optional string)
+  centsN = getStringArg(centsN, '')
+  if (centsN === null) return null // unexpected/unsupported value type for centsN
+  let [cp, cs] = centsN ? centsN.split('/') : []
+  if (cp && !cs) {
+    cs = cp.toLowerCase().endsWith('s') ? cp.slice(0, -1) : cp
+  }
+  // check exactly (optional string, default == '')
+  exactly = getStringArg(exactly, '')
+  if (exactly === null) return null // invalid (non-string)
+  // check separator (optional string, default == 'and')
+  separator = getStringArg(separator, 'and')
+  if (separator === null) return null // invalid (non-string) separator
+  // round input -- either 2 places or 0, depending on centsN
+  const num = truncOrRound(input, { places: cp ? 2 : 0, round: true })
+  if (num === null || typeof num === 'undefined') return num
+  // integer + fractional parts
+  const dpart = Math.trunc(num)
+  const cpart = Math.round(num % 1 * 100)
+  // put string together
+  let result = numWords.toWords(dpart, { useCommas: false }) + ' ' + (dpart === 1 ? ds : dp)
+  if (cpart) {
+    if (separator) {
+      result += ' ' + separator
+    }
+    result += ' ' + numWords.toWords(cpart) + ' ' + (cpart === 1 ? cs : cp)
+  } else if (exactly) {
+    result += ' ' + exactly
+  }
+  return result
+}
+
+function round (input, places) {
+  return truncOrRound(input, { places, round: true })
+}
+
+function truncate (input, places) {
+  return truncOrRound(input, { places, round: false })
+}
+
+/*
+function fractional (input, denom) {
+  if (input === null || typeof input === 'undefined') return input
+  const num = Number(input)
+  if (!Number.isFinite(num)) return null
+  if (denom === null || typeof denom === 'undefined') {
+    denom = 1
+  } else {
+    denom = Number(denom)
+    if (!Number.isFinite(denom) || denom <= 0) return null
+  }
+  return num % 1 * denom
+}
+
+function integer (input, denom) {
+  if (input === null || typeof input === 'undefined') return input
+  const num = Number(input)
+  if (!Number.isFinite(num)) return null
+  if (denom === null || typeof denom === 'undefined') {
+    denom = 1
+  } else {
+    denom = Number(denom)
+    if (!Number.isFinite(denom) || denom <= 0) return null
+  }
+  return denom === 1 ? Math.trunc(num) : null
+}
+
+*/
 
 function else_filter (input, unansweredFmt) {
   if (input === null || typeof input === 'undefined') return unansweredFmt
@@ -367,4 +478,42 @@ function callArrayFunc (func, arrayScope, predicateLambda, funcName) {
     predicateLambda(arrayScope.getOwnScope(index))
   ))
   return result
+}
+
+function truncOrRound (number, options) {
+  // check number
+  if (number === null || typeof number === 'undefined') return number
+  const num = Number(number)
+  if (!Number.isFinite(num)) return null
+  let { places, round } = options
+  // check places
+  if (places === null || typeof places === 'undefined') {
+    places = 0
+  } else {
+    places = Number(places)
+    if (!Number.isFinite(places) || places < 0) return null
+  }
+  options.places = places
+  options.round = Boolean(round)
+  // round or truncate as requested
+  const factor = Math.pow(10, places)
+  let n = num * factor
+  if (round) {
+    if (num >= 0)
+      n = Math.round(n)
+    else
+      n = -Math.round(Math.abs(n))
+  } else { // truncate
+    n = Math.trunc(n)
+  }
+  return n / factor
+}
+
+function getStringArg (str, defValue) {
+  if (str && typeof str === 'object') str = str.valueOf()
+  if (typeof str === 'string') {
+    return str // a string was provided; use it
+  } // else
+  if (str) return null // invalid argument type
+  return defValue // no string provided; use default
 }
