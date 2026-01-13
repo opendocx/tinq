@@ -331,6 +331,7 @@ function keepsections (input) {
 // runtime implementation of list filters:
 
 function sort (arrayScope) {
+  if (arrayScope.type === 'null') return arrayScope.valueOf()
   if (arrayScope.type !== 'array') {
     throw new Error('sort filter requires an array scope')
   }
