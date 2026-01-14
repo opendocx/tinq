@@ -3,7 +3,7 @@ import { isTruthy } from "./utils.mjs";
 import { useScope, ExternalFile } from "./scope.mjs"
 import { AST } from "./ast.mjs";
 import { DataAggregator } from './dataaggregator.mjs'
-import { v4 as uuidv4 } from 'uuid'
+import { uuidv4 } from './uuid.mjs'
 
 export class DataExtractor extends ASTInterpreterBase {
   constructor (externals = null) {
