@@ -4,8 +4,7 @@
 // external code. This works for plain text documents as well as binary formats that must be
 // produced asynchronously/out-of-band.
 
-import { Tinq } from '../src/index.mjs'
-import { ExternalFile } from '../src/index.mjs';
+import { Tinq, ExternalFile, RecursionError } from '../src/index.mjs';
 import chai from 'chai'
 var expect = chai.expect
 
@@ -29,7 +28,14 @@ describe("plain text composition", function() {
       'This is a parent document, Fred.\nThis is an inserted template, Fred.\nThis is the parent document again, Fred.'
     )
   })
-
+  it('should catch infinite recursion without overflowing the stack', function () {
+    const template = '{[Name]}'
+    const scope = {
+      Name: tinq.compileTemplate('This is an inserted template, {[Name]}.'),
+    }
+    const evaluate = tinq.compileTemplate(template)
+    expect(() => evaluate(scope)).to.throw(RecursionError)
+  })
   it("composes output where plain text is inserted INDIRECTLY into plain text", function () {
     // this example (using compileExternal) works the same as above (with compileTemplate) ONLY because
     // the parent template in both cases is a text template, AND the compileExternal (in this case) also
@@ -46,6 +52,15 @@ describe("plain text composition", function() {
       'This is a parent document, Fred.\nThis is an inserted template, Fred.\nThis is the parent document again, Fred.'
     )
   })
+  // currently this seems to be the same test as the one above, so we'll skip it
+  // it('should catch "external" infinite recursion without overflowing the stack', function () {
+  //   const template = '{[Name]}'
+  //   const scope = {
+  //     Name: tinq.compileExternal('Name', 'This is an inserted template, {[Name]}.'),
+  //   }
+  //   const evaluate = tinq.compileTemplate(template)
+  //   expect(() => evaluate(scope)).to.throw(RecursionError)
+  // })
   it('allows text composition with text from custom functions', function () {
     const textFunc = scope => 'my custom value'
     textFunc.ast = true // <-- required
@@ -122,6 +137,12 @@ describe("external composition", function () {
     expect(result.data.toXml('top')).to.equal('<?xml version="1.0"?><top><C1>Fred</C1></top>')
     // template can then be used to locate & retrieve whatever the template actually is
     // and data can be used as input to the assembly process for that template
+  })
+  it('should catch infinite recursion in external templates without overflowing the stack', function () {
+    const test_logic = [{"type":"Content","expr":"Name","id":"1","key":"C1"}]
+    const evaluate = tinq.compileExternal('Template', test_logic)
+    const scope = { Name: evaluate }
+    expect(() => evaluate(scope)).to.throw(RecursionError)
   })
   it('should automatically extract the data necessary for InsertTest.docx AND Inserted.docx', function () {
     /* InsertTest.docx:

@@ -55,6 +55,9 @@ export class DataExtractor extends ASTInterpreterBase {
       }
     } else if (typeof value === 'object') {
       if (value instanceof ExternalFile) {
+        // NOTE: yatte used to check whether the external "file" could be
+        // converted to text, and if so, convert it HERE. But TINQ works differently;
+        // the conversion cannot happen here.
         this.data.set(ident, this._registerExternal(value))
         return
       } else if (value.errors || value.missing) {

@@ -1,4 +1,5 @@
 import { primitiveConstructors } from './utils.mjs'
+import { recurseLimit, RecursionError } from './recursionerror.mjs'
 import equal from 'fast-deep-equal'
 
 export function useScope (valueOrScope) {
@@ -114,8 +115,11 @@ export class Scope {
     if (this.type === 'null') return undefined
     let result = this.value[ident]
     if (typeof result === 'function' && result.ast) {
-      result = result.apply(undefined, [this])
-      // the following would cause all text-based ExternalFiles to auto-compose, but we don't want this here.
+      const func = result
+      increment(func) // increment recurse count
+      result = func.apply(undefined, [this])
+      decrement(func) // decrement recurse count
+      // the following would cause all text-based ExternalFiles to auto-compose, but we don't want this (here!)
       // if (result instanceof ExternalFile && typeof result.data !== 'object') {
       //   result = result.data
       // }
@@ -293,3 +297,19 @@ class ScopeFactory {
 }
 
 export const scopeFactory = new ScopeFactory()
+
+function increment (func) {
+  const currentCount = func._count
+  if (currentCount > recurseLimit) {
+    throw new RecursionError()
+  } else if (currentCount === undefined) {
+    func._count = 0
+  }
+  func._count++
+}
+
+function decrement (func) {
+  if (func._count) {
+    func._count--
+  }
+}

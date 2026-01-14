@@ -9,8 +9,9 @@ import { extractLogic } from "./extractlogic.mjs"
 import { DataExtractor } from './dataextractor.mjs'
 import { LogicTreeImporter } from './legacy.mjs'
 import { Scope, EnumerationScope, ExternalFile, useScope, scopeFactory } from './scope.mjs'
+import { RecursionError } from './recursionerror.mjs'
 
-export { ExpressionParser, TemplateParser, AST, Scope, EnumerationScope, ExternalFile, scopeFactory }
+export { ExpressionParser, TemplateParser, AST, Scope, EnumerationScope, ExternalFile, scopeFactory, RecursionError }
 
 const defaultOptions = {
   interpreter: false, // true uses interpreter instead of compiler

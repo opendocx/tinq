@@ -1,10 +1,10 @@
 import path from 'path'
 import { fileURLToPath } from 'node:url'
 import chai from 'chai'
-import { Tinq } from '../src/index.mjs'
+import { Tinq, RecursionError } from '../src/index.mjs'
 import { readJSONFile } from './test-utils.mjs'
 import { useScope } from '../src/scope.mjs'
-import fs from 'fs'
+
 var assert = chai.assert
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -46,6 +46,11 @@ describe('Generating XML data for DOCX templates', function () {
     const aggr = tinq.extractData(logic, {})
     const str = aggr.data.toXml('_odx')
     assert.strictEqual(str, '<?xml version="1.0"?><_odx><C1>[Testator.Name]</C1><C3>[Testator.City]</C3><C4>[Testator.County]</C4><C5>[Testator.State]</C5><C6>[Representative.Name]</C6><C7>[Representative.City]</C7><C8>[Representative.County]</C8><C9>[Representative.State]</C9><C10>[Representative.Gender.HeShe]</C10><C12b>false</C12b><L18></L18><C27>[GoverningLaw]</C27><C29>[SigningDate]</C29><C33>[Testator.Gender.HimHer]</C33><C34>[Testator.Gender.HisHer]</C34><C37>[Witness1Name]</C37><C38>[Witness2Name]</C38><C39>[GoverningLaw]</C39><C40>[NotaryCounty]</C40></_odx>')
+  })
+  it('data extraction should avoid infinite recursion when templates have circular references', async function () {
+    const logic = [{"type":"Content","expr":"Name","id":"1","key":"C1"}]
+    const scope = { Name: tinq.compileExternal('Name', logic) }
+    assert.throws(() => tinq.extractData(logic, scope), RecursionError)
   })
   it('data extraction should execute against a populated context', async function () {
     const templatePath = GetTemplatePath('SimpleWill.docx')
