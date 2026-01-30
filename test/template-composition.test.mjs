@@ -122,12 +122,12 @@ describe("plain text composition", function() {
 
 describe("external composition", function () {
   it('illustrates a baseline external template (no composition)', function () {
-    /* Test.docx:
+    /* Test.docx (theoretically) contains:
     This is a template, {[Name]}.
     */
     // Test.docx.json (e.g. produced by extracting fields using opendocx-net):
     const test_logic = [{"type":"Content","expr":"Name","id":"1","key":"C1"}] // opendocx content array:
-    // type == field type; expr = field expression; id == field number; key = field identifier/indirect element name
+    // type == field type; expr = field expression; id == field number; key = expr identifier/"atom" (element name)
     const scope = { Name: 'Fred' }
     const evaluate = tinq.compileExternal('myTemplateId', test_logic)
     const result = evaluate(scope)
@@ -135,8 +135,8 @@ describe("external composition", function () {
     expect(result).to.not.be.an('array')
     expect(result.template).to.equal('myTemplateId')
     expect(result.data.toXml('top')).to.equal('<?xml version="1.0"?><top><C1>Fred</C1></top>')
-    // template can then be used to locate & retrieve whatever the template actually is
-    // and data can be used as input to the assembly process for that template
+    // result.template can then be used to locate & retrieve the actual template, while
+    // result.data can be used as input to the assembly process for that template
   })
   it('should catch infinite recursion in external templates without overflowing the stack', function () {
     const test_logic = [{"type":"Content","expr":"Name","id":"1","key":"C1"}]
@@ -164,7 +164,7 @@ describe("external composition", function () {
       Name: 'Fred',
       Insert: tinq.compileExternal({tid:2}, inserted_logic)
     }
-    const evaluate = tinq.compileExternal({tid:1}, template)
+    const evaluate = tinq.compileExternal({tid:1}, template, undefined, "out.docx")
     const result = evaluate(scope)
     expect(result).to.be.an('array')
     expect(result.length).to.equal(2)
