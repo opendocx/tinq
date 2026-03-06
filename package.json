@@ -1,5 +1,5 @@
 {
-  "name": "tinql",
+  "name": "@opendocx/tinq",
   "version": "0.3.0",
   "description": "Text INtegrated Query",
   "main": "./src/index.mjs",
