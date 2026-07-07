@@ -5,6 +5,7 @@ node_modules
 coverage
 .nyc_output
 lcov*
+index.cjs
 
 # development environment prefs
 # .vscode
