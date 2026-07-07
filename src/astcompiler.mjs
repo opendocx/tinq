@@ -77,7 +77,7 @@ export class ASTCompiler {
     const fns = []
     append(fns, `"${USE} ${STRICT}"`)
     append(fns, this.filterPrefix())
-    append(fns, `var fn=${this.generateFunction("fn", "s,a,i")}`)
+    append(fns, `var fn=${this.generateFunction("fn", "s,e,a,i")}`)
     append(fns, extra)
     append(fns, this.watchFns())
     append(fns, 'return fn')
@@ -104,7 +104,7 @@ export class ASTCompiler {
     const fns = this.state.inputs // currently always empty because inputs stage & watch finding is commented out
     const self = this
     fns.forEach(name => {
-      result.push(`var ${name}=${self.generateFunction(name, 's')}`)
+      result.push(`var ${name}=${self.generateFunction(name, 's,e,a,i')}`)
     })
     if (fns.length) {
       result.push(`fn.inputs=[${fns.join(',')}];`)
@@ -214,13 +214,13 @@ export class ASTCompiler {
       case AST.ListField:
         expression = this.nextId() // the list value itself
         this.recurse(ast.expression, expression, true) // get list value
-        right = this.assignId(this.nextId(), this.generateFunction(ast.content._lkey, 's')) // list content lambda
+        right = this.assignId(this.nextId(), this.generateFunction(ast.content._lkey, 's,e,a,i')) // list content lambda
         left = this.nextId(false, '') // var to hold result of list concatenation
         this.if_(
           expression + '&&' + expression + '.length',
           () => {
             self.assignId(left, '[]')
-            self.forEachScope(expression, left, right)
+            self.forEachScope(expression, left, right, ast.frame)
             self.assignId(left, left + '.join("")')
           }
         )
@@ -283,7 +283,12 @@ export class ASTCompiler {
           }
         } else {
           intoId = intoId || this.nextId()
-          if (wantScope || (create && create !== 1)) {
+          if (isFrameIdentifier(ast.name)) {
+            this.assignId(intoId, wantScope || (create && create !== 1)
+              ? this.externalFrameScope(ast.name)
+              : this.externalFrameValue(ast.name)
+            )
+          } else if (wantScope || (create && create !== 1)) {
             this.assignId(intoId, this.lookupScope(ast.name, ast.ns))
             if (create && create !== 1) {
               this.if_(
@@ -409,7 +414,7 @@ export class ASTCompiler {
         ast.arguments.forEach(expr => {
           const argId = self.nextId()
           if (expr.type === AST.LambdaExpression || expr.type === AST.SortKeyExpression) {
-            self.assignId(argId, self.generateFunction(expr._lkey, 's'))
+            self.assignId(argId, self.bindEnv(self.generateFunction(expr._lkey, 's,e,a,i'), expr.frame))
             if (expr.type === AST.SortKeyExpression && expr.descending) {
               self.assignId(argId + '.descending', 'true') // sets a "descending" property on the sort key lambda function
             }
@@ -586,9 +591,23 @@ export class ASTCompiler {
     return 'c.lookupValue("' + name + (ns ? '","' + ns : '') + '")'
   }
 
-  forEachScope (scopeId, accumulatorId, lambdaId) {
+  externalFrameScope (name) {
+    return 'use(e&&e[' + escape(name) + '])'
+  }
+
+  externalFrameValue (name) {
+    return 'e&&e[' + escape(name) + ']'
+  }
+
+  bindEnv (funcExpr, frameName) {
+    const env = frameName ? extendEnv(frameName, 's') : 'e'
+    return 'function(s){return (' + funcExpr + ').call(undefined,s,' + env + ',a,i)}'
+  }
+
+  forEachScope (scopeId, accumulatorId, lambdaId, frameName) {
+    const env = frameName ? extendEnv(frameName, 'es') : 'e'
     const result = scopeId + '.forEachScope(es=>'
-      + accumulatorId + '.push(' + lambdaId + '.call(undefined,es)))'
+      + accumulatorId + '.push(' + lambdaId + '.call(undefined,es,' + env + ',a,i)))'
     this.current().body.push(result, ';')
   }
 
@@ -668,6 +687,14 @@ class Register { // instances of this class are what get accumulated in a state'
 
 function getCacheKey (ast, isScope, prefix) {
   return (prefix ? prefix + '::' : '') + (isScope ? 'scope::' : '') + AST.serialize(ast)
+}
+
+function isFrameIdentifier (name) {
+  return typeof name === 'string' && name.startsWith('$')
+}
+
+function extendEnv (frameName, scopeId) {
+  return 'Object.assign({},e,{' + escape(frameName) + ':use(' + scopeId + ').valueOf()})'
 }
 
 function getOwnScope (scopeId, name) {

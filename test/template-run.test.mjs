@@ -429,10 +429,71 @@ describe("tinq.templater", function() {
           const result = evaluate(scope)
           assert.strictEqual(result, 'John Smith')
         })
+        it('should assemble template content from the explicit lowered-frame environment', function () {
+          const template = 'Case: {[$case.Number]}'
+          evaluate = tinq.compileTemplate(template)
+          const result = evaluate({}, { $case: { Number: 'A-123' } })
+          assert.strictEqual(result, 'Case: A-123')
+        })
+        it('should bind lowered frame metadata in a template list', function () {
+          const template = '{[list Families]}{[$f.Name]} {[endlist]}'
+          const ast = tinq.parseTemplate(template)
+          listFields(ast)[0].frame = '$f'
+          evaluate = tinq.compileTemplate(ast)
+          const data = {
+            Families: [
+              { Name: 'Robinson' },
+              { Name: 'Jetson' }
+            ]
+          }
+          const result = evaluate(data)
+          assert.strictEqual(result, 'Robinson Jetson ')
+        })
+        it('should preserve outer lowered frames inside nested template lists', function () {
+          const template = '{[list Families]}{[$f.Name]}:{[list Children]}{[$f.Name]}/{[$c.Name]};{[endlist]} {[endlist]}'
+          const ast = tinq.parseTemplate(template)
+          const lists = listFields(ast)
+          lists[0].frame = '$f'
+          lists[1].frame = '$c'
+          evaluate = tinq.compileTemplate(ast)
+          const data = {
+            Families: [
+              {
+                Name: 'Robinson',
+                Children: [{ Name: 'Will' }, { Name: 'Penny' }]
+              },
+              {
+                Name: 'Jetson',
+                Children: [{ Name: 'Elroy' }]
+              }
+            ]
+          }
+          const result = evaluate(data)
+          assert.strictEqual(result, 'Robinson:Robinson/Will;Robinson/Penny; Jetson:Jetson/Elroy; ')
+        })
       })
     })
   })
 })
+
+function listFields (ast, result = []) {
+  if (!ast) return result
+  switch (ast.type) {
+    case AST.Program:
+    case AST.TemplateBlock:
+      ast.body.forEach(node => listFields(node, result))
+      break
+    case AST.ConditionalField:
+      listFields(ast.consequent, result)
+      listFields(ast.alternate, result)
+      break
+    case AST.ListField:
+      result.push(ast)
+      listFields(ast.content, result)
+      break
+  }
+  return result
+}
 
 const data_Children = {
   Children: [

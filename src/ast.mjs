@@ -10,7 +10,7 @@ AST.TemplateElement = 'TemplateElement' // a chunk of boilerplate content (no fi
 AST.ContentField = 'ContentField' // a content field in a template
 AST.NoOp = 'NoOp' // no-op statement in a template
 AST.ConditionalField = 'ConditionalField' // an if/elseif/else/endif block in a template
-AST.ListField = 'ListField' // a list/endlist block in a template (properties: expression and content (block))
+AST.ListField = 'ListField' // a list/endlist block in a template (properties: expression and content (block); optional lowering metadata: frame)
 AST.ThisExpression = 'ThisExpression' // "this" keyword -- in angular-expression, this represents the "scope"
 AST.ArrayExpression = 'ArrayExpression'
 AST.ObjectExpression = 'ObjectExpression'
@@ -24,8 +24,8 @@ AST.CallExpression = 'CallExpression'
 AST.AssignmentExpression = 'AssignmentExpression'
 // also includes some custom/proprietary node types:
 AST.FilterExpression = 'FilterExpression' // properties: input (node), filter (ident), arguments (node array)
-AST.LambdaExpression = 'LambdaExpression' // list filter argument -- properties: expression (node)
-AST.SortKeyExpression = 'SortKeyExpression' // sort filter argument -- properties: key (node), descending (bool)
+AST.LambdaExpression = 'LambdaExpression' // list filter argument -- properties: expression (node); optional lowering metadata: frame
+AST.SortKeyExpression = 'SortKeyExpression' // sort filter argument -- properties: key (node), descending (bool); optional lowering metadata: frame
 // static methods
 AST.serialize = serializeAstNode
 // AST.mutateInPlace = astMutateInPlace

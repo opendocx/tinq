@@ -123,7 +123,9 @@ export class Tinq {
   }
 
   compileExpression (src) {
-    let func = this.cache && this.cache[src]
+    const isAstInput = src && typeof src === 'object'
+    let cacheKey = isAstInput ? astCacheKey(src) : src
+    let func = this.cache && this.cache[cacheKey]
     if (!func) {
       let ast
       if (typeof src === 'string') {
@@ -138,8 +140,8 @@ export class Tinq {
         func.normalized = AST.serialize(ast)
       }
       if (this.cache) {
-        this.cache[src] = func
-        if (src !== func.normalized) {
+        this.cache[cacheKey] = func
+        if (!isAstInput && cacheKey !== func.normalized) {
           this.cache[func.normalized] = func
         }
       }
@@ -228,4 +230,75 @@ export class Tinq {
     }
     return result
   }
+}
+
+function astCacheKey (ast) {
+  return 'ast:' + AST.serialize(ast) + ':frames:' + JSON.stringify(collectFrameMetadata(ast))
+}
+
+function collectFrameMetadata (ast, path = '$', result = []) {
+  if (!ast || typeof ast !== 'object') return result
+  if (ast.frame) {
+    result.push([path, ast.type, ast.frame])
+  }
+  switch (ast.type) {
+    case AST.Program:
+    case AST.TemplateBlock:
+      ast.body.forEach((node, index) => collectFrameMetadata(node, path + '.body[' + index + ']', result))
+      break
+    case AST.ContentField:
+      collectFrameMetadata(ast.expression, path + '.expression', result)
+      break
+    case AST.ConditionalField:
+      collectFrameMetadata(ast.test, path + '.test', result)
+      collectFrameMetadata(ast.consequent, path + '.consequent', result)
+      collectFrameMetadata(ast.alternate, path + '.alternate', result)
+      break
+    case AST.ListField:
+      collectFrameMetadata(ast.expression, path + '.expression', result)
+      collectFrameMetadata(ast.content, path + '.content', result)
+      break
+    case AST.MemberExpression:
+      collectFrameMetadata(ast.object, path + '.object', result)
+      collectFrameMetadata(ast.property, path + '.property', result)
+      break
+    case AST.CallExpression:
+      collectFrameMetadata(ast.callee, path + '.callee', result)
+      ast.arguments.forEach((node, index) => collectFrameMetadata(node, path + '.arguments[' + index + ']', result))
+      break
+    case AST.FilterExpression:
+      collectFrameMetadata(ast.input, path + '.input', result)
+      ast.arguments.forEach((node, index) => collectFrameMetadata(node, path + '.arguments[' + index + ']', result))
+      break
+    case AST.LambdaExpression:
+      collectFrameMetadata(ast.expression, path + '.expression', result)
+      break
+    case AST.SortKeyExpression:
+      collectFrameMetadata(ast.key, path + '.key', result)
+      break
+    case AST.ArrayExpression:
+      ast.elements.forEach((node, index) => collectFrameMetadata(node, path + '.elements[' + index + ']', result))
+      break
+    case AST.ObjectExpression:
+      ast.properties.forEach((node, index) => collectFrameMetadata(node, path + '.properties[' + index + ']', result))
+      break
+    case AST.Property:
+      collectFrameMetadata(ast.key, path + '.key', result)
+      collectFrameMetadata(ast.value, path + '.value', result)
+      break
+    case AST.BinaryExpression:
+    case AST.LogicalExpression:
+      collectFrameMetadata(ast.left, path + '.left', result)
+      collectFrameMetadata(ast.right, path + '.right', result)
+      break
+    case AST.UnaryExpression:
+      collectFrameMetadata(ast.argument, path + '.argument', result)
+      break
+    case AST.ConditionalExpression:
+      collectFrameMetadata(ast.test, path + '.test', result)
+      collectFrameMetadata(ast.consequent, path + '.consequent', result)
+      collectFrameMetadata(ast.alternate, path + '.alternate', result)
+      break
+  }
+  return result
 }

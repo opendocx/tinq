@@ -114,6 +114,72 @@ describe("tinq", function() {
 					evaluate = tinq.compileExpression("this");
 					expect(evaluate(scope)).to.equal(scope);
 				});
+
+				it("should read lowered frame identifiers from the explicit evaluation environment", function() {
+					evaluate = tinq.compileExpression("$client.vName");
+					expect(evaluate({}, { $client: { vName: "Jenny" } })).to.equal("Jenny");
+				});
+
+				it("should prefer explicit lowered frame identifiers over same-named scope values", function() {
+					evaluate = tinq.compileExpression("$client.vName");
+					expect(evaluate({ $client: { vName: "Wrong" } }, { $client: { vName: "Right" } })).to.equal("Right");
+				});
+			});
+
+			describe("scope frame modes", function() {
+				describe("ordinary identifiers", function() {
+					it("should use dynamic scope lookup through the current scope stack", function() {
+						evaluate = tinq.compileExpression("Name");
+						expect(
+							evaluate(use({ Name: "Outer" }).pushScope({ Name: "Inner" }))
+						).to.equal("Inner");
+					});
+
+					it("should allow list filter lambdas to find values from the parent scope dynamically", function() {
+						evaluate = tinq.compileExpression("children | filter: Age > minAge");
+						const data = {
+							minAge: 10,
+							children: [
+								{ Name: "Young", Age: 6 },
+								{ Name: "Older", Age: 12 },
+							],
+						};
+						expect(evaluate(data)).to.deep.equal([
+							{ Name: "Older", Age: 12 },
+						]);
+					});
+				});
+
+				describe("lowered frame identifiers", function() {
+					it("should read dollar-prefixed identifiers from the explicit environment", function() {
+						evaluate = tinq.compileExpression("$client.Name");
+						expect(
+							evaluate({ $client: { Name: "Scope" } }, { $client: { Name: "Environment" } })
+						).to.equal("Environment");
+					});
+
+					it("should not fall back to ordinary dynamic lookup when the explicit environment is omitted", function() {
+						evaluate = tinq.compileExpression("$client.Name");
+						expect(
+							evaluate({ $client: { Name: "Scope" } })
+						).to.equal(undefined);
+					});
+
+					it("should let lowered lambda frame metadata name the current list item explicitly", function() {
+						const ast = tinq.parseExpression('families | filter: $f.Name == "B"');
+						ast.arguments[0].frame = "$f";
+						evaluate = tinq.compileExpression(ast);
+						const data = {
+							families: [
+								{ Name: "A" },
+								{ Name: "B" },
+							],
+						};
+						expect(evaluate(data)).to.deep.equal([
+							{ Name: "B" },
+						]);
+					});
+				});
 			});
 	
 			describe("when evaluating simple assignments", function() {
@@ -367,6 +433,67 @@ describe("tinq", function() {
 						evaluate({})
 					).to.deep.equal([2,3,4]);
 				});
+				it("should make lowered frame identifiers available inside list filter lambdas", function() {
+					evaluate = tinq.compileExpression('children | filter: Age > $limits.minAge');
+					const data = {
+						children: [
+							{ Name: "Young", Age: 6 },
+							{ Name: "Older", Age: 12 },
+						],
+					};
+					expect(
+						evaluate(data, { $limits: { minAge: 10 } })
+					).to.deep.equal([
+						{ Name: "Older", Age: 12 },
+					]);
+				});
+				it("should make lowered frame identifiers available inside nested list filter lambdas", function() {
+					evaluate = tinq.compileExpression('families | filter: (children | any: Age > $limits.minAge)');
+					const data = {
+						families: [
+							{ Name: "A", children: [{ Age: 6 }] },
+							{ Name: "B", children: [{ Age: 12 }] },
+						],
+					};
+					expect(
+						evaluate(data, { $limits: { minAge: 10 } })
+					).to.deep.equal([
+						{ Name: "B", children: [{ Age: 12 }] },
+					]);
+				});
+				it("should bind lowered frame identifiers from list filter lambda metadata", function() {
+					const ast = tinq.parseExpression('families | filter: $f.Name == "B"');
+					ast.arguments[0].frame = "$f";
+					evaluate = tinq.compileExpression(ast);
+					const data = {
+						families: [
+							{ Name: "A" },
+							{ Name: "B" },
+						],
+					};
+					expect(
+						evaluate(data)
+					).to.deep.equal([
+						{ Name: "B" },
+					]);
+				});
+				it("should make outer lowered frames available inside nested list filter lambdas", function() {
+					const ast = tinq.parseExpression('families | filter: (children | any: $f.Name == "B" && $c.Age > 10)');
+					ast.arguments[0].frame = "$f";
+					ast.arguments[0].expression.arguments[0].frame = "$c";
+					evaluate = tinq.compileExpression(ast);
+					const data = {
+						families: [
+							{ Name: "A", children: [{ Age: 12 }] },
+							{ Name: "B", children: [{ Age: 6 }, { Age: 12 }] },
+						],
+					};
+					expect(
+						evaluate(data)
+					).to.deep.equal([
+						{ Name: "B", children: [{ Age: 6 }, { Age: 12 }] },
+					]);
+				});
 				it("should apply the sort filter", function() {
 					evaluate = tinq.compileExpression('[3,1,4,1,5,9] | sort: this');
 					expect(
@@ -438,6 +565,33 @@ describe("tinq", function() {
 					var fn = tinq.compileExpression("a");
 	
 					expect(tinq.cache.a).to.equal(fn);
+				});
+
+				it("should cache AST inputs by normalized expression instead of object identity", function() {
+					var astA = tinq.parseExpression("a");
+					var astB = tinq.parseExpression("b");
+					var fnA = tinq.compileExpression(astA);
+					var fnB = tinq.compileExpression(astB);
+
+					expect(fnA).to.not.equal(fnB);
+					expect(tinq.compileExpression(astA)).to.equal(fnA);
+					expect(tinq.compileExpression(astB)).to.equal(fnB);
+					expect(fnA({ a: "A", b: "B" })).to.equal("A");
+					expect(fnB({ a: "A", b: "B" })).to.equal("B");
+				});
+
+				it("should include lowered frame metadata in AST input cache keys", function() {
+					var astF = tinq.parseExpression('items | filter: $f.Name == "A"');
+					var astG = tinq.parseExpression('items | filter: $g.Name == "A"');
+					astF.arguments[0].frame = "$f";
+					astG.arguments[0].frame = "$g";
+					var fnF = tinq.compileExpression(astF);
+					var fnG = tinq.compileExpression(astG);
+					var data = { items: [{ Name: "A" }] };
+
+					expect(fnF).to.not.equal(fnG);
+					expect(fnF(data)).to.deep.equal([{ Name: "A" }]);
+					expect(fnG(data)).to.deep.equal([{ Name: "A" }]);
 				});
 	
 				describe("when setting it to false", function() {
