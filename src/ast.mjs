@@ -199,7 +199,7 @@ function serializeAstNode (ast, subs = false, isElseIf = false) {
 		case AST.TemplateBlock:
 			return ast.body.map(statement => serializeAstNode(statement, subs)).join(ast.joiner || '')
 		case AST.TemplateElement:
-			return (ast.value && ast.value.raw) || ast.value
+			return ast.text ?? ''
     case AST.ContentField:
       return '{[' + serializeAstNode(ast.expression, subs) + ']}'
 		case AST.ConditionalField:

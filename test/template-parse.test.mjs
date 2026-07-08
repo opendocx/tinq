@@ -1,6 +1,7 @@
 import { describe, it } from 'mocha'
 import chai from 'chai'
 import { Tinq } from '../src/index.mjs'
+import { AST } from '../src/ast.mjs'
 import { toContentArray } from '../src/legacy.mjs'
 
 var assert = chai.assert
@@ -15,6 +16,15 @@ const parseTemplateLegacy = (text) => {
   const result = templateParser.ast(text)
   return toContentArray(result)
 }
+
+describe('Template AST serialization', function () {
+  it('serializes template text elements inside conditional blocks', function () {
+    const template = '{[if true]}, all{[endif]}'
+    const ast = tinq.parseTemplate(template)
+
+    assert.strictEqual(AST.serialize(ast), template)
+  })
+})
 
 describe('Field parsing of simple conditionals', function () {
   it('should parse the FullName template', function () {
