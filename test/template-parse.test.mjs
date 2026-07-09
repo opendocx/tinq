@@ -104,6 +104,62 @@ describe('Template AST serialization', function () {
   })
 })
 
+describe('Template AST locations', function () {
+  const tinqWithLocations = new Tinq({ includeLocation: true })
+
+  it('omits template node locations unless includeLocation is enabled', function () {
+    const ast = tinq.parseTemplate('A{[Name]}')
+
+    assert.isUndefined(ast.body[0].loc)
+    assert.isUndefined(ast.body[1].loc)
+    assert.isUndefined(ast.body[1].expressionLoc)
+  })
+
+  it('captures absolute locations for text elements and content fields', function () {
+    const ast = tinqWithLocations.parseTemplate('A{[Name // note]}B')
+    const textBefore = ast.body[0]
+    const field = ast.body[1]
+    const textAfter = ast.body[2]
+
+    assert.deepStrictEqual(textBefore.loc, { start: { column: 0 }, end: { column: 1 } })
+    assert.deepStrictEqual(field.loc, { start: { column: 1 }, end: { column: 17 } })
+    assert.deepStrictEqual(field.expressionLoc, { start: { column: 3 }, end: { column: 7 } })
+    assert.deepStrictEqual(field.commentPrefixLoc, { start: { column: 7 }, end: { column: 10 } })
+    assert.deepStrictEqual(field.commentLoc, { start: { column: 10 }, end: { column: 15 } })
+    assert.deepStrictEqual(field.expression.loc, { start: { column: 0 }, end: { column: 4 } })
+    assert.deepStrictEqual(textAfter.loc, { start: { column: 17 }, end: { column: 18 } })
+  })
+
+  it('captures absolute locations for conditional field parts', function () {
+    const ast = tinqWithLocations.parseTemplate('{[if Flag // ok]}Y{[else // no]}N{[endif // done]}')
+    const field = ast.body[0]
+
+    assert.deepStrictEqual(field.loc, { start: { column: 0 }, end: { column: 50 } })
+    assert.deepStrictEqual(field.openLoc, { start: { column: 0 }, end: { column: 17 } })
+    assert.deepStrictEqual(field.testLoc, { start: { column: 5 }, end: { column: 9 } })
+    assert.deepStrictEqual(field.commentPrefixLoc, { start: { column: 9 }, end: { column: 12 } })
+    assert.deepStrictEqual(field.commentLoc, { start: { column: 12 }, end: { column: 15 } })
+    assert.deepStrictEqual(field.altLoc, { start: { column: 18 }, end: { column: 32 } })
+    assert.deepStrictEqual(field.altCommentPrefixLoc, { start: { column: 24 }, end: { column: 27 } })
+    assert.deepStrictEqual(field.altCommentLoc, { start: { column: 27 }, end: { column: 30 } })
+    assert.deepStrictEqual(field.endLoc, { start: { column: 33 }, end: { column: 50 } })
+    assert.deepStrictEqual(field.endCommentPrefixLoc, { start: { column: 40 }, end: { column: 43 } })
+    assert.deepStrictEqual(field.endCommentLoc, { start: { column: 43 }, end: { column: 48 } })
+  })
+
+  it('captures absolute locations for list field parts', function () {
+    const ast = tinqWithLocations.parseTemplate('{[list Kids]}{[Age]}{[endlist]}')
+    const field = ast.body[0]
+
+    assert.deepStrictEqual(field.loc, { start: { column: 0 }, end: { column: 31 } })
+    assert.deepStrictEqual(field.openLoc, { start: { column: 0 }, end: { column: 13 } })
+    assert.deepStrictEqual(field.expressionLoc, { start: { column: 7 }, end: { column: 11 } })
+    assert.deepStrictEqual(field.content.body[0].loc, { start: { column: 13 }, end: { column: 20 } })
+    assert.deepStrictEqual(field.content.body[0].expressionLoc, { start: { column: 15 }, end: { column: 18 } })
+    assert.deepStrictEqual(field.endLoc, { start: { column: 20 }, end: { column: 31 } })
+  })
+})
+
 describe('Field parsing of simple conditionals', function () {
   it('should parse the FullName template', function () {
     const template = '{[First]} {[if Middle]}{[Middle]} {[endif]}{[Last]}{[if Suffix]} {[Suffix]}{[endif]}'

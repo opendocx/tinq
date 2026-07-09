@@ -24,33 +24,85 @@ export class TemplateParser {
     return value
   }
 
+  loc (start, end) {
+    if (!this.options?.includeLocation || typeof start !== "number") {
+      return undefined
+    }
+    const loc = { start: { column: start } }
+    if (typeof end === "number") {
+      loc.end = { column: end }
+    }
+    return loc
+  }
+
   addLoc (node, start, end) {
-    if (this.options?.includeLocation && typeof start === "number") {
-      node.loc = { start: { column: start } }
-      if (typeof end === "number") {
-        node.loc.end = { column: end }
-      }
+    const loc = this.loc(start, end)
+    if (loc) {
+      node.loc = loc
     }
     return node
   }
 
+  addTokenLocs (node, token, expressionStart = 0, expressionText = token?.text) {
+    if (!this.options?.includeLocation || !token || typeof token.index !== "number") {
+      return node
+    }
+
+    const rawText = token.rawText ?? token.text
+    const innerStart = token.index + 2
+    this.addLoc(node, token.index, innerStart + rawText.length + 2)
+
+    if (typeof expressionText === "string") {
+      node.expressionLoc = this.loc(
+        innerStart + expressionStart,
+        innerStart + expressionStart + expressionText.length
+      )
+    }
+
+    if (token.comment !== undefined) {
+      const commentPrefixStart = token.commentIndex - token.commentPrefix.length
+      node.commentPrefixLoc = this.loc(
+        innerStart + commentPrefixStart,
+        innerStart + token.commentIndex
+      )
+      node.commentLoc = this.loc(
+        innerStart + token.commentIndex,
+        innerStart + rawText.length
+      )
+    }
+
+    return node
+  }
+
+  addBlockLoc (node, openToken, endToken) {
+    if (!this.options?.includeLocation || !openToken || !endToken) {
+      return node
+    }
+    const endRawText = endToken.rawText ?? endToken.text
+    return this.addLoc(node, openToken.index, endToken.index + endRawText.length + 4)
+  }
+
   program () {
     const body = this.blockBody()
-    return this.addLoc(
-      { type: AST.Program, body: body },
-      0,
-      body && body.length && body[0].loc && body[0].loc.end && body[0].loc.end.column
-    )
+    return this.addLoc({ type: AST.Program, body: body }, 0, this.text.length)
   }
 
   templateBlock (body) {
     if (!body) {
       body = this.blockBody()
     }
-    return {
+    const block = {
       type: AST.TemplateBlock,
       body,
     }
+    if (body.length > 0 && body[0].loc) {
+      const firstLoc = body[0].loc
+      const lastLoc = body[body.length - 1].loc
+      if (firstLoc.start && lastLoc?.end) {
+        this.addLoc(block, firstLoc.start.column, lastLoc.end.column)
+      }
+    }
+    return block
   }
 
   blockBody () {
@@ -81,10 +133,14 @@ export class TemplateParser {
     if (!text) {
       token = this.expect()
     }
-    return {
+    const result = {
       type: AST.TemplateElement,
       text: text || token.text,
     }
+    if (token) {
+      this.addLoc(result, token.index, token.index + token.text.length)
+    }
+    return result
   }
 
   parseBlockElement () {
@@ -133,7 +189,7 @@ export class TemplateParser {
           this.throwError('when expecting an {[endif]}', this.peek())
         }
       }
-      return {
+      const result = {
         type: AST.ConditionalField,
         test: this.exprParser.ast(token.content),
         consequent: consequent.length === 1 ? consequent[0] : this.templateBlock(consequent),
@@ -148,6 +204,31 @@ export class TemplateParser {
         endComment: expectEnd ? endToken.comment : undefined,
         endCommentPrefix: expectEnd ? endToken.commentPrefix : undefined,
       }
+      this.addTokenLocs(result, token, getFieldExpressionStart(isAlternate ? 'elseif' : 'if', token.text), token.content)
+      if (result.loc) {
+        result.openLoc = result.loc
+        result.testLoc = result.expressionLoc
+        if (altToken) {
+          const altLocs = this.addTokenLocs({}, altToken, undefined, undefined)
+          result.altLoc = altLocs.loc
+          if (altToken.comment !== undefined) {
+            result.altCommentPrefixLoc = altLocs.commentPrefixLoc
+            result.altCommentLoc = altLocs.commentLoc
+          }
+        }
+        if (expectEnd) {
+          const endLocs = this.addTokenLocs({}, endToken, undefined, undefined)
+          result.endLoc = endLocs.loc
+          if (endToken.comment !== undefined) {
+            result.endCommentPrefixLoc = endLocs.commentPrefixLoc
+            result.endCommentLoc = endLocs.commentLoc
+          }
+          this.addBlockLoc(result, token, endToken)
+        } else if (alternate?.loc?.end) {
+          this.addLoc(result, token.index, alternate.loc.end.column)
+        }
+      }
+      return result
     }
     return false
 
@@ -166,7 +247,7 @@ export class TemplateParser {
       if ((endToken = this.expectField('endlist'))) {
         this.appendPuncPlaceholder(content.body)
         content.lambda = true
-        return {
+        const result = {
           type: AST.ListField,
           expression: this.exprParser.ast(token.content),
           content,
@@ -177,6 +258,18 @@ export class TemplateParser {
           endComment: endToken.comment,
           endCommentPrefix: endToken.commentPrefix,
         }
+        this.addTokenLocs(result, token, getFieldExpressionStart('list', token.text), token.content)
+        if (result.loc) {
+          result.openLoc = result.loc
+          const endLocs = this.addTokenLocs({}, endToken, undefined, undefined)
+          result.endLoc = endLocs.loc
+          if (endToken.comment !== undefined) {
+            result.endCommentPrefixLoc = endLocs.commentPrefixLoc
+            result.endCommentLoc = endLocs.commentLoc
+          }
+          this.addBlockLoc(result, token, endToken)
+        }
+        return result
       } else {
         this.throwError('when expecting an {[endlist]}', this.peek())
       }
@@ -215,6 +308,7 @@ export class TemplateParser {
       expression: this.exprParser.ast(expr),
     }
     if (token) {
+      this.addTokenLocs(result, token)
       if (token.comment !== undefined) {
         result.comment = token.comment
         result.commentPrefix = token.commentPrefix
@@ -225,7 +319,7 @@ export class TemplateParser {
         // } else {
         this.tokens.unshift({
           token: 'Quasi',
-          index: token.index + token.text.length + 4,
+          index: token.index + (token.rawText ?? token.text).length + 4,
           text: '\n'
         })
         // }
@@ -237,12 +331,6 @@ export class TemplateParser {
     }
     return result
   }
-
-  // expressionStatement () {
-  //   const start = this.tokens[0].index
-  //   const expr = this.filterChain()
-  //   return this.addLoc({ type: AST.ContentField, expression: expr }, start, expr.loc && expr.loc.end && expr.loc.end.column)
-  // }
 
   throwError (msg, token) {
     throw new Error(`Encountered ${this.describeToken(token)} ${msg}`)
@@ -362,6 +450,18 @@ function getFieldContent (name, text) {
     return match[1] || true
   }
   return false
+}
+
+function getFieldExpressionStart (name, text) {
+  let i = 0
+  while (i < text.length && /\s/.test(text.charAt(i))) {
+    i++
+  }
+  i += name.length
+  while (i < text.length && /\s/.test(text.charAt(i))) {
+    i++
+  }
+  return i
 }
 
 function isTerminalField (text) {
