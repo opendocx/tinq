@@ -114,12 +114,19 @@ export class TemplateLexer {
   }
 
   fieldToken (text, fieldNum = undefined, soloLine = undefined) {
+    const field = splitFieldComment(text)
     const newToken = {
       token: 'Field',
       index: this.index,
-      text,
+      text: field.text,
     }
-    if (numbered(text)) {
+    if (field.comment !== undefined) {
+      newToken.rawText = text
+      newToken.comment = field.comment
+      newToken.commentPrefix = field.commentPrefix
+      newToken.commentIndex = field.commentIndex
+    }
+    if (numbered(field.text)) {
       this.fieldNum++
       if (fieldNum) {
         if (fieldNum.toString() !== this.fieldNum.toString()) {
@@ -191,6 +198,47 @@ function getFieldContent (text) {
     return text.slice(1, -1).replace(_curlyquotes, '"').replace(_zws, '')
   }
   return null
+}
+
+function splitFieldComment (text) {
+  let quote = null
+  let escaped = false
+
+  for (let i = 0; i < text.length - 1; i++) {
+    const ch = text.charAt(i)
+
+    if (quote) {
+      if (escaped) {
+        escaped = false
+      } else if (ch === '\\') {
+        escaped = true
+      } else if (ch === quote) {
+        quote = null
+      }
+      continue
+    }
+
+    if (ch === '"' || ch === "'") {
+      quote = ch
+    } else if (ch === '/' && text.charAt(i + 1) === '/') {
+      let prefixStart = i
+      while (prefixStart > 0 && isHorizontalWhitespace(text.charAt(prefixStart - 1))) {
+        prefixStart--
+      }
+      return {
+        text: text.slice(0, prefixStart),
+        comment: text.slice(i + 2),
+        commentPrefix: text.slice(prefixStart, i + 2),
+        commentIndex: i + 2,
+      }
+    }
+  }
+
+  return { text }
+}
+
+function isHorizontalWhitespace (ch) {
+  return ch === ' ' || ch === '\t'
 }
 
 const UNNUMBERED = ['level', 'endlevel', '_punc']

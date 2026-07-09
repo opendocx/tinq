@@ -141,6 +141,12 @@ export class TemplateParser {
         fieldNum: token.fieldNum,
         altFieldNum: altToken ? altToken.fieldNum : undefined,
         endFieldNum: expectEnd ? endToken.fieldNum : undefined,
+        comment: token.comment,
+        commentPrefix: token.commentPrefix,
+        altComment: altToken ? altToken.comment : undefined,
+        altCommentPrefix: altToken ? altToken.commentPrefix : undefined,
+        endComment: expectEnd ? endToken.comment : undefined,
+        endCommentPrefix: expectEnd ? endToken.commentPrefix : undefined,
       }
     }
     return false
@@ -166,6 +172,10 @@ export class TemplateParser {
           content,
           fieldNum: token.fieldNum,
           endFieldNum: endToken.fieldNum,
+          comment: token.comment,
+          commentPrefix: token.commentPrefix,
+          endComment: endToken.comment,
+          endCommentPrefix: endToken.commentPrefix,
         }
       } else {
         this.throwError('when expecting an {[endlist]}', this.peek())
@@ -205,6 +215,10 @@ export class TemplateParser {
       expression: this.exprParser.ast(expr),
     }
     if (token) {
+      if (token.comment !== undefined) {
+        result.comment = token.comment
+        result.commentPrefix = token.commentPrefix
+      }
       if (token.soloLine) {
         // const nextToken = this.peek()
         // if (nextToken.token === 'Quasi') {

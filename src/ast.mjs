@@ -201,19 +201,19 @@ function serializeAstNode (ast, subs = false, isElseIf = false) {
 		case AST.TemplateElement:
 			return ast.text ?? ''
     case AST.ContentField:
-      return '{[' + serializeAstNode(ast.expression, subs) + ']}'
+      return '{[' + serializeAstNode(ast.expression, subs) + serializeComment(ast.comment, ast.commentPrefix) + ']}'
 		case AST.ConditionalField:
 			return (isElseIf ? '{[elseif ' : '{[if ')
-				+ serializeAstNode(ast.test, subs) + ']}'
+				+ serializeAstNode(ast.test, subs) + serializeComment(ast.comment, ast.commentPrefix) + ']}'
 			  + serializeAstNode(ast.consequent, subs)
 				+ (ast.alternate
 				  ? ast.alternate.type === AST.ConditionalField
-					  ? '{[elseif ' + serializeAstNode(ast.alternate.test, subs) + ']}' + serializeAstNode(ast.alternate.consequent)
-						: '{[else]}' + serializeAstNode(ast.alternate, subs) + '{[endif]}'
-					: '{[endif]}'
+					  ? serializeAstNode(ast.alternate, subs, true)
+						: '{[else' + serializeComment(ast.altComment, ast.altCommentPrefix) + ']}' + serializeAstNode(ast.alternate, subs) + '{[endif' + serializeComment(ast.endComment, ast.endCommentPrefix) + ']}'
+					: '{[endif' + serializeComment(ast.endComment, ast.endCommentPrefix) + ']}'
         )
     case AST.ListField:
-      return '{[list ' + serializeAstNode(ast.expression, subs) + ']}' + serializeAstNode(ast.content) + '{[endlist]}'
+      return '{[list ' + serializeAstNode(ast.expression, subs) + serializeComment(ast.comment, ast.commentPrefix) + ']}' + serializeAstNode(ast.content) + '{[endlist' + serializeComment(ast.endComment, ast.endCommentPrefix) + ']}'
     case AST.Literal:
       if (typeof ast.value === 'string') { return '"' + ast.value + '"' }
       if (ast.value === null) { return 'null' }
@@ -281,4 +281,8 @@ function serializeAstNode (ast, subs = false, isElseIf = false) {
     default:
       throw new Error(`Unsupported expression type '${ast.type}'`)
   }
+}
+
+function serializeComment (comment, prefix = '//') {
+  return comment === undefined ? '' : prefix + comment
 }

@@ -24,6 +24,84 @@ describe('Template AST serialization', function () {
 
     assert.strictEqual(AST.serialize(ast), template)
   })
+
+  it('parses field comments outside expression strings', function () {
+    const template = '{[Name// shown in Designer]}'
+    const ast = tinq.parseTemplate(template)
+
+    assert.strictEqual(ast.body[0].comment, ' shown in Designer')
+    assert.strictEqual(ast.body[0].commentPrefix, '//')
+    assert.strictEqual(ast.body[0].expression.name, 'Name')
+    assert.strictEqual(AST.serialize(ast), template)
+  })
+
+  it('preserves whitespace before field comment delimiters intentionally', function () {
+    const template = '{[Name // shown in Designer]}'
+    const ast = tinq.parseTemplate(template)
+
+    assert.strictEqual(ast.body[0].comment, ' shown in Designer')
+    assert.strictEqual(ast.body[0].commentPrefix, ' //')
+    assert.strictEqual(ast.body[0].expression.name, 'Name')
+    assert.strictEqual(AST.serialize(ast), template)
+  })
+
+  it('does not treat double slashes inside strings as field comments', function () {
+    const template = '{[Name + "http://example.com"]}'
+    const ast = tinq.parseTemplate(template)
+
+    assert.isUndefined(ast.body[0].comment)
+    assert.strictEqual(ast.body[0].expression.right.value, 'http://example.com')
+    assert.strictEqual(AST.serialize(ast), '{[Name+"http://example.com"]}')
+  })
+
+  it('parses comments on conditional fields', function () {
+    const template = '{[if First// first]}A{[else// otherwise]}B{[endif// done]}'
+    const ast = tinq.parseTemplate(template)
+    const field = ast.body[0]
+
+    assert.strictEqual(field.comment, ' first')
+    assert.strictEqual(field.commentPrefix, '//')
+    assert.strictEqual(field.altComment, ' otherwise')
+    assert.strictEqual(field.altCommentPrefix, '//')
+    assert.strictEqual(field.endComment, ' done')
+    assert.strictEqual(field.endCommentPrefix, '//')
+    assert.strictEqual(AST.serialize(ast), template)
+  })
+
+  it('preserves whitespace before terminal field comment delimiters', function () {
+    const template = '{[if First // first]}A{[else // otherwise]}B{[endif // done ]}'
+    const ast = tinq.parseTemplate(template)
+    const field = ast.body[0]
+
+    assert.strictEqual(field.comment, ' first')
+    assert.strictEqual(field.commentPrefix, ' //')
+    assert.strictEqual(field.altComment, ' otherwise')
+    assert.strictEqual(field.altCommentPrefix, ' //')
+    assert.strictEqual(field.endComment, ' done ')
+    assert.strictEqual(field.endCommentPrefix, ' //')
+    assert.strictEqual(AST.serialize(ast), template)
+  })
+
+  it('parses comments on elseif fields', function () {
+    const template = '{[if First// first]}A{[elseif Middle// middle]}B{[endif// done]}'
+    const ast = tinq.parseTemplate(template)
+    const field = ast.body[0]
+
+    assert.strictEqual(field.comment, ' first')
+    assert.strictEqual(field.alternate.comment, ' middle')
+    assert.strictEqual(field.alternate.endComment, ' done')
+    assert.strictEqual(AST.serialize(ast), template)
+  })
+
+  it('parses comments on list fields', function () {
+    const template = '{[list Children// each child]}{[Name]}{[_punc]}{[endlist// done]}'
+    const ast = tinq.parseTemplate(template)
+    const field = ast.body[0]
+
+    assert.strictEqual(field.comment, ' each child')
+    assert.strictEqual(field.endComment, ' done')
+    assert.strictEqual(AST.serialize(ast), template)
+  })
 })
 
 describe('Field parsing of simple conditionals', function () {
