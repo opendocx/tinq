@@ -1,6 +1,6 @@
 {
   "name": "@opendocx/tinq",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Text INtegrated Query",
   "main": "./src/index.mjs",
   "type": "module",
