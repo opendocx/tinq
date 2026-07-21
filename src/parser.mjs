@@ -212,7 +212,10 @@ export class ExpressionParser {
 		const token = this.expect("+", "-")
 		return {
 			type: AST.SortKeyExpression,
-			key: this.primary(),
+			// A sort key is a normal expression evaluated against each list item.
+			// The optional leading sign is the sort-direction marker, so it is
+			// consumed separately from the expression itself.
+			key: this.expression(),
 			descending: Boolean(token && token.text === "-"),
 		}
 	}

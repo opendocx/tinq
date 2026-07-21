@@ -376,6 +376,12 @@ describe("YEvaluate Filters", function() {
             evaluate({})
           ).to.deep.equal([{a:"B",b:1},{a:"B",b:2},{a:"B",b:3},{a:"A",b:1},{a:"A",b:2},{a:"A",b:3}])
         })
+        it("should evaluate a compound expression for a sort key", function() {
+          evaluate = tinq.compileExpression('[{a:2,b:3},{a:1,b:10},{a:2,b:1}] | sort: a + b')
+          expect(
+            evaluate({})
+          ).to.deep.equal([{a:2,b:1},{a:2,b:3},{a:1,b:10}])
+        })
         it('allows lookup of/access to an object in a list using the find filter', function () {
           evaluate = tinq.compileExpression('(table|find:col1=="b").col2')
           const data = {
