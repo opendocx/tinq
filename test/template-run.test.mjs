@@ -343,6 +343,21 @@ describe("tinq.templater", function() {
           const result = evaluate(data)
           assert.strictEqual(result, 'Continents:\n\n * Africa (#1 on Earth)\n * Asia (#2 on Earth)\n * Europe (#3 on Earth)\n * North America (#4 on Earth)\n * South America (#5 on Earth)\n * Antarctica (#6 on Earth)\n * Australia/Oceania (#7 on Earth)\n')
         })
+        it('should preserve _index on lowered named list frames', function () {
+          const ast = tinq.parseTemplate('{[list Families]}{[$f._index]}:{[list Children]}{[$f._index]}:{[$c._index]};{[endlist]} {[endlist]}')
+          ast.body[0].frame = '$f'
+          ast.body[0].content.body[2].frame = '$c'
+          evaluate = tinq.compileTemplate(ast)
+
+          const data = {
+            Families: [
+              { Children: [{}, {}] },
+              { Children: [{}] },
+            ],
+          }
+
+          assert.strictEqual(evaluate(data), '1:1:1;1:2; 2:2:1; ')
+        })
         it('should assemble a document with a list of wrapped primitives', function () {
           const template = '{[list Continents|sort:-SurfaceArea]}\n{[this]}\n{[endlist]}'
           evaluate = tinq.compileTemplate(template)

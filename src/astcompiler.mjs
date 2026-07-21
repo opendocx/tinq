@@ -694,7 +694,10 @@ function isFrameIdentifier (name) {
 }
 
 function extendEnv (frameName, scopeId) {
-  return 'Object.assign({},e,{' + escape(frameName) + ':use(' + scopeId + ').valueOf()})'
+  // Preserve the Scope wrapper so lowered named list frames retain runtime
+  // metadata such as _index and _parent, not just their underlying value.
+  // This supports frame infrastructure.
+  return 'Object.assign({},e,{' + escape(frameName) + ':use(' + scopeId + ')})'
 }
 
 function getOwnScope (scopeId, name) {

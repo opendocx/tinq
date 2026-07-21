@@ -369,7 +369,10 @@ function isFrameIdentifier (name) {
 
 function extendEnv (env, frameName, scope) {
   if (!frameName) return env
-  return Object.assign({}, env, { [frameName]: useScope(scope).valueOf() })
+  // Keep the Scope wrapper in lowered environments. Besides the value itself,
+  // list iteration scopes carry runtime metadata such as _index and _parent
+  // that must remain available.
+  return Object.assign({}, env, { [frameName]: useScope(scope) })
 }
 
 export class ASTInterpreter extends ASTInterpreterBase {
