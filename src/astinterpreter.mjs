@@ -1,4 +1,4 @@
-import { isConstant, isDefined, isLiteral, plusFn, findConstantExpressions, noop } from "./utils.mjs";
+import { isConstant, isDefined, isLiteral, isTruthy, plusFn, findConstantExpressions, noop } from "./utils.mjs";
 import { GetFilter } from "./index.mjs"
 import { useScope } from "./scope.mjs"
 import { AST } from "./ast.mjs";
@@ -103,7 +103,7 @@ export class ASTInterpreterBase {
         right = this.recurse(ast.argument)
         return function unary_op (scope, env, assign, inputs) {
           let result = right(scope, env, assign, inputs)
-          if (ast.operator === '!') return !result
+          if (ast.operator === '!') return !isTruthy(result)
           if (isDefined(result)) return ast.operator === '-' ? -result : +result
           return 0
         }
@@ -135,8 +135,8 @@ export class ASTInterpreterBase {
         return function logical_op (scope, env, assign, inputs) {
           const lhs = left(scope, env, assign, inputs)
           switch (ast.operator) {
-            case '&&': return lhs && right(scope, env, assign, inputs)
-            case '||': return lhs || right(scope, env, assign, inputs)
+            case '&&': return isTruthy(lhs) ? right(scope, env, assign, inputs) : lhs
+            case '||': return isTruthy(lhs) ? lhs : right(scope, env, assign, inputs)
           }
         }
       case AST.ConditionalExpression:
@@ -144,7 +144,7 @@ export class ASTInterpreterBase {
         left = this.recurse(ast.consequent)
         right = this.recurse(ast.alternate)
         return function ternary_op (scope, env, assign, inputs) {
-          return expression(scope, env, assign, inputs)
+          return isTruthy(expression(scope, env, assign, inputs))
             ? left(scope, env, assign, inputs)
             : right(scope, env, assign, inputs)
         }
@@ -337,7 +337,7 @@ export class ASTInterpreterBase {
   }
 
   conditionalField (testFn, consequentFn, alternateFn, scope, key, env, assign, inputs) {
-    if (testFn(scope, env, assign, inputs)) {
+    if (isTruthy(testFn(scope, env, assign, inputs))) {
       return consequentFn(scope, env, assign, inputs)
     } else if (alternateFn) {
       return alternateFn(scope, env, assign, inputs)

@@ -336,6 +336,22 @@ describe("tinq", function() {
 					evaluate = tinq.compileExpression("!false");
 					expect(evaluate()).to.equal(true);
 				});
+
+				it("should treat empty arrays as falsy in every boolean context", function() {
+					scope.values = []
+					evaluate = tinq.compileExpression("!values")
+					expect(evaluate(scope)).to.equal(true)
+					evaluate = tinq.compileExpression('values || "fallback"')
+					expect(evaluate(scope)).to.equal('fallback')
+					evaluate = tinq.compileExpression('values && "then"')
+					expect(evaluate(scope)).to.eql([])
+					evaluate = tinq.compileExpression('values ? "yes" : "no"')
+					expect(evaluate(scope)).to.equal('no')
+					evaluate = tinq.compileExpression('[[], [1]] | filter: this')
+					expect(evaluate(scope)).to.eql([[1]])
+					const template = tinq.compileTemplate('{[if values]}yes{[else]}no{[endif]}')
+					expect(template(scope)).to.equal('no')
+				});
 	
 				/* Ooops, angular doesn't support ++. Maybe someday?
 							it("should return the expected result when using ++", function () {

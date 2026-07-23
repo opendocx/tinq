@@ -110,11 +110,11 @@ export function isTruthy (value) {
 	let bValue
 	if (value && isIterable(value)) {
 		// checking if a list is empty or not
-		if (!YObject.isArray(value)) {
+		if (!Array.isArray(value)) {
 			value = Array.from(value)
 		}
-		bValue = (value.length > 0) // for purposes of evaluation in yatte, we consider empty lists falsy!
-		// (unlike typical JavaScript, where any non-null array, even empty ones, are considered truthy)
+		bValue = (value.length > 0) // TINQ considers empty lists falsy.
+		// This intentionally differs from JavaScript, where any non-null array is truthy.
 	} else {
 		bValue = Boolean(value)
 	}

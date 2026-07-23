@@ -3,7 +3,7 @@ import numeral from 'numeral'
 import numWords from 'number-to-words-en'
 import deepEqual from 'fast-deep-equal'
 import { parseListExample } from './scope.mjs'
-import { unEscapeQuotes, isIterable } from './utils.mjs'
+import { unEscapeQuotes, isIterable, isTruthy } from './utils.mjs'
 
 // define built-in filters
 export default {
@@ -393,7 +393,7 @@ every.listFilter = true
 every.rtlFilter = true
 
 function map (arrayScope, mapLambda) {
-  return callArrayFunc(Array.prototype.map, arrayScope, mapLambda, 'map')
+  return callArrayFunc(Array.prototype.map, arrayScope, mapLambda, 'map', false)
 }
 map.listFilter = true
 
@@ -458,7 +458,7 @@ reduce.listFilter = true
 // helper functions
 
 // callArrayFunc accepts an "array scope" and returns a regular array
-function callArrayFunc (func, arrayScope, predicateLambda, funcName) {
+function callArrayFunc (func, arrayScope, predicateLambda, funcName, usePredicateTruthiness = true) {
   if (arrayScope.type === 'null') return arrayScope.valueOf()
   if (arrayScope.type !== 'array') {
     throw new Error('list filters require an array scope')
@@ -475,9 +475,10 @@ function callArrayFunc (func, arrayScope, predicateLambda, funcName) {
     }
     throw new Error(`Invalid argument passed to ${filter} filter: ${predicateLambda}`)
   }
-  const result = func.call(array, (item, index) => (
-    predicateLambda(arrayScope.getOwnScope(index))
-  ))
+  const result = func.call(array, (item, index) => {
+    const value = predicateLambda(arrayScope.getOwnScope(index))
+    return usePredicateTruthiness ? isTruthy(value) : value
+  })
   return result
 }
 

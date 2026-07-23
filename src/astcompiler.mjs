@@ -1,4 +1,4 @@
-import { isConstant, isDefined, isLiteral, isString, isNumber, ifDefined as ifd, plusFn as pls, assignableAST, isAssignable, getInputs, findConstantExpressions, noop } from "./utils.mjs"
+import { isConstant, isDefined, isLiteral, isString, isNumber, isTruthy, ifDefined as ifd, plusFn as pls, assignableAST, isAssignable, getInputs, findConstantExpressions, noop } from "./utils.mjs"
 import { useScope as use } from "./scope.mjs"
 import { AST } from "./ast.mjs";
 
@@ -87,8 +87,9 @@ export class ASTCompiler {
       'ifd',
       'pls',
       'use',
+      'itt',
       fns.join('\n') // last argument to Function() is function body; each prior is an argument name
-    )(this.filters, ifd, pls, use)
+    )(this.filters, ifd, pls, use, isTruthy)
 
     this.state = this.stage = undefined
     fn.ast = ast
@@ -187,7 +188,7 @@ export class ASTCompiler {
         intoId = intoId || this.nextId()
         self.recurse(ast.test, intoId, undefined, undefined, 'bool')
         self.if_(
-          intoId,
+          truth_(intoId),
           () => { // consequent can be either a block node or a single
             if (ast.consequent.type === AST.TemplateBlock) {
               self.assignId(intoId, '[]')
@@ -235,7 +236,9 @@ export class ASTCompiler {
         this.recurse(ast.argument, undefined, undefined, expr => {
           right = expr
         })
-        expression = ast.operator + '(' + if_Defined(right, 0) + ')' // TODO: use precedence to determine whether parens are needed
+        expression = ast.operator === '!'
+          ? not_(truth_(right))
+          : ast.operator + '(' + if_Defined(right, 0) + ')' // TODO: use precedence to determine whether parens are needed
         this.assignId(intoId, expression)
         returnFn(expression)
         break
@@ -256,7 +259,7 @@ export class ASTCompiler {
         intoId = intoId || this.nextId()
         this.recurse(ast.left, intoId)
         this.if_(
-          ast.operator === '&&' ? intoId : not_(intoId),
+          ast.operator === '&&' ? truth_(intoId) : not_(truth_(intoId)),
           this.lazyRecurse(ast.right, intoId)
         )
         returnFn(intoId)
@@ -265,7 +268,7 @@ export class ASTCompiler {
         intoId = intoId || this.nextId()
         this.recurse(ast.test, intoId)
         this.if_(
-          intoId,
+          truth_(intoId),
           this.lazyRecurse(ast.consequent, intoId),
           this.lazyRecurse(ast.alternate, intoId),
         )
@@ -730,6 +733,10 @@ function plus_ (left, right) {
 
 function not_ (expression) {
   return '!(' + expression + ')'
+}
+
+function truth_ (expression) {
+  return 'itt(' + expression + ')'
 }
 
 function and_ (left, right, needParens = false) {
