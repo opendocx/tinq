@@ -107,6 +107,9 @@ export class Tinq {
     // with Tinq's AST format. But for now, we use both.
   }
 
+  // Imported field nodes retain their source `id` as `fieldNum`. If a field's
+  // expression cannot be parsed, the thrown parser error carries `fieldNum`
+  // too; its message and type are unchanged. Unnumbered fields omit it.
   logicToTemplateAst (logicTree) {
     const importer = new LogicTreeImporter(this)
     return importer.arrayToBlock(logicTree, AST.Program)

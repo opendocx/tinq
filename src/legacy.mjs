@@ -106,11 +106,22 @@ export class LogicTreeImporter {
         return this.listBlock(node)
     }
   }
+
+  parseFieldExpression (node) {
+    try {
+      return this.tinq.parseExpression(node.expr)
+    } catch (error) {
+      // Preserve the parser error and identify the source field using the
+      // same metadata as imported template AST nodes.
+      if (node.id != null) error.fieldNum = node.id
+      throw error
+    }
+  }
   
   contentField (node) {
     const result = {
       type: AST.ContentField,
-      expression: this.tinq.parseExpression(node.expr),
+      expression: this.parseFieldExpression(node),
     }
     if (node.id) {
       result.fieldNum = node.id
@@ -135,7 +146,7 @@ export class LogicTreeImporter {
     }
     const result = {
       type: AST.ConditionalField,
-      test: this.tinq.parseExpression(node.expr),
+      test: this.parseFieldExpression(node),
       consequent,
       alternate,
     }
@@ -156,7 +167,7 @@ export class LogicTreeImporter {
     const content = this.arrayToBlock(node.contentArray, AST.TemplateBlock)
     const result = {
       type: AST.ListField,
-      expression: this.tinq.parseExpression(node.expr),
+      expression: this.parseFieldExpression(node),
       content,
     }
     if (node.id) {
