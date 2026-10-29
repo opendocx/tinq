@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 import { isConstant, isDefined, isLiteral, isTruthy, plusFn, findConstantExpressions, noop } from "./utils.mjs";
 import { GetFilter } from "./index.mjs"
 import { useScope } from "./scope.mjs"

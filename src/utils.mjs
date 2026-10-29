@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 import { AST } from "./ast.mjs";
 
 export const primitiveConstructors = [String, Number, Boolean, Date, Function]

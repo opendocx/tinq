@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 import { OD, toContentArray } from './legacy.mjs'
 
 // this code is carried over from Yatte. Its original purpose was to do some low-hanging optimizations of parsed

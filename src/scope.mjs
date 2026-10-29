@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 import { primitiveConstructors } from './utils.mjs'
 import { recurseLimit, RecursionError } from './recursionerror.mjs'
 import equal from 'fast-deep-equal'

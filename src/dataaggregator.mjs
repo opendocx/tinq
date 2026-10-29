@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 import { ExternalFile } from './scope.mjs'
 import { isDate, dateFormat } from './utils.mjs'
 

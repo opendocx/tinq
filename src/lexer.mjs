@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 import { createMap, isDefined, isString, lowercase } from './utils.mjs'
 
 const OPERATORS = "+ - * / % === !== == != < > <= >= && || ! = |"

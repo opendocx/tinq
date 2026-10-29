@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 import { createMap } from './utils.mjs'
 import { TemplateParser } from './templateparser.mjs'
 import { ExpressionParser } from './parser.mjs'

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 import { AST } from "./ast.mjs"
 import { Lexer } from './lexer.mjs'
 import { isAssignable } from "./utils.mjs";

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 export const recurseLimit = 20
 
 export class RecursionError extends Error {

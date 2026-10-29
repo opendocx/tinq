@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 /**
  * Generate a UUID v4 using native crypto.randomUUID()
  * @returns {string} UUID v4 string

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 import { format as dateFnsFormat } from 'date-fns'
 import numeral from 'numeral'
 import numWords from 'number-to-words-en'

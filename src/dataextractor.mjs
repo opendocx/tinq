@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 import { ASTInterpreterBase } from './astinterpreter.mjs'
 import { isTruthy } from "./utils.mjs";
 import { useScope, ExternalFile } from "./scope.mjs"
