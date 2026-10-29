@@ -322,6 +322,7 @@ export class ASTCompiler {
           } else {
             intoId = this.getCacheId(key)
           }
+          returnFn(intoId)
         } else {
           intoId = intoId || this.nextId() // whole member expression will be stored here
           // once the object (left) side is handled (see below), this will handle the property (right) side:

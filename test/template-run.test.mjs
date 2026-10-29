@@ -450,6 +450,18 @@ describe("tinq.templater", function() {
           const result = evaluate({}, { $case: { Number: 'A-123' } })
           assert.strictEqual(result, 'Case: A-123')
         })
+        it('should reuse a lowered member in successive fields inside nested lists', function () {
+          const ast = tinq.parseTemplate('{[list Widgets]}{[list $root.Sprockets]}' +
+            '{[$widget.Name]}/{[$widget.Name]}/{[$root.Name]}:{[$sprocket.SprocketName]};{[endlist]}{[endlist]}')
+          const lists = listFields(ast)
+          lists[0].frame = '$widget'
+          lists[1].frame = '$sprocket'
+          evaluate = tinq.compileTemplate(ast)
+          const data = { Name: 'main', Widgets: [{ Name: 7 }, { Name: 8 }],
+            Sprockets: [{ SprocketName: 'Gear' }, { SprocketName: 'Cog' }] }
+          assert.strictEqual(evaluate(data, { $root: data }),
+            '7/7/main:Gear;7/7/main:Cog;8/8/main:Gear;8/8/main:Cog;')
+        })
         it('should bind lowered frame metadata in a template list', function () {
           const template = '{[list Families]}{[$f.Name]} {[endlist]}'
           const ast = tinq.parseTemplate(template)
