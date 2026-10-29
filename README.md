@@ -5,9 +5,9 @@ and evaluation for JavaScript.
 
 TINQ is the experimental successor to [yatte](https://github.com/opendocx/yatte),
 with roots in [angular-expressions](https://github.com/peerigon/angular-expressions)
-and AngularJS. Its development is currently guided primarily by the needs of
-Knackly, while keeping the library usable independently and broadly agnostic
-about application data types and models.
+and AngularJS. Knackly is the primary sponsor of TINQ development. The library
+is designed to be usable independently and broadly agnostic about application
+data types and models.
 
 ## Development status
 
