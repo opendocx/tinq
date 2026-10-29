@@ -5,6 +5,52 @@ contain field/logic structures, not the source DOCX/PDF documents or completed
 customer records. File extensions describe the expected input format; TINQ
 does not open DOCX or PDF files directly.
 
+## Intended integration workflow
+
+The fixtures represent saved metadata between template preparation and document
+assembly. The broader workflow has two stages:
+
+1. Prepare a source template: extract its fields, associate them with expressions
+   and control-flow structure, and save that metadata with the template.
+2. Assemble output: use TINQ to evaluate the saved logic against application data,
+   then pass the evaluated values to the appropriate document assembler.
+
+The metadata, source/compiled template, and evaluated field identifiers must
+agree; keep them associated with the same template version.
+
+### DOCX
+
+DOCX integration is intended to use
+[opendocx-net](https://github.com/opendocx/opendocx-net). That project handles
+extracting fields and compiling a Word template for OpenXmlPowerTools document
+assembly. A host application uses TINQ to evaluate the corresponding logic and
+produce the XML consumed by the assembler, then asks the document tooling to
+assemble the compiled template with that XML.
+
+The DOCX-style fixtures exercise the field/logic import and evaluated-data part
+of that workflow. They do not test Word extraction, template compilation, or
+final DOCX assembly. Text-template features such as comments and source locations
+also depend on what the DOCX extraction metadata preserves.
+
+### PDF
+
+The intended PDF workflow uses a host adapter around `node-pdftk` to extract
+PDF form-field metadata and record a mapping from PDF field names to TINQ
+expressions. At assembly time, the host evaluates those expressions with TINQ,
+converts the results to the field-value mapping expected by the PDF tooling,
+and fills the template to produce a new PDF.
+
+TINQ's `extractData(logicTree, scope)` supplies evaluated data; its `data`
+aggregator exposes `toJson()` for JSON serialization and `toXml()` for XML.
+The PDF-style fixtures exercise import and evaluation with PDF field names,
+while an adapter must handle the actual PDF extraction, value conversion, and
+form filling.
+
+The availability of a published standalone PDF adapter still needs to be
+confirmed. A runnable extraction-and-filling example, or a reusable adapter
+project, would make a useful companion to TINQ. That integration code is not
+included here.
+
 ## PDF-style fields
 
 The six descriptively named files in `pdf/` were authored as synthetic TINQ
