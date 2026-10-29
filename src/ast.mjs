@@ -24,13 +24,12 @@ AST.MemberExpression = 'MemberExpression'
 AST.ConditionalExpression = 'ConditionalExpression'
 AST.CallExpression = 'CallExpression'
 AST.AssignmentExpression = 'AssignmentExpression'
-// also includes some custom/proprietary node types:
+// also includes some custom node types:
 AST.FilterExpression = 'FilterExpression' // properties: input (node), filter (ident), arguments (node array)
 AST.LambdaExpression = 'LambdaExpression' // list filter argument -- properties: expression (node); optional lowering metadata: frame
 AST.SortKeyExpression = 'SortKeyExpression' // sort filter argument -- properties: key (node), descending (bool); optional lowering metadata: frame
 // static methods
 AST.serialize = serializeAstNode
-// AST.mutateInPlace = astMutateInPlace
 // Internal use only
 AST.NGValueParameter = 'NGValueParameter'
 
@@ -80,62 +79,6 @@ const EXPRESSIONS_PRECEDENCE = {
 	[AST.LambdaExpression]: 1,
   [AST.FilterExpression]: 0,
 }
-
-// function astMutateInPlace (node, mutator) {
-//   var nodeModified = mutator(node)
-//   switch (node.type) {
-//     case AST.Program:
-//       return nodeModified | node.body.reduce(
-//         (accumulator, statementObj) => (accumulator |= astMutateInPlace(statementObj, mutator)),
-//         false
-//       )
-//     case AST.ContentField:
-//       return nodeModified | astMutateInPlace(node.expression, mutator)
-//     case AST.Literal:
-//     case AST.Identifier:
-//     case AST.ThisExpression:
-//       return nodeModified
-//     case AST.MemberExpression:
-//       return nodeModified | astMutateInPlace(node.object, mutator) | astMutateInPlace(node.property, mutator)
-//     case AST.CallExpression:
-//       return nodeModified | astMutateInPlace(node.callee, mutator) | node.arguments.reduce(
-//         (accumulator, argObj) => (accumulator |= astMutateInPlace(argObj, mutator)),
-//         false
-//       )
-//     case AST.FilterExpression:
-//       return nodeModified | astMutateInPlace(node.filter, mutator)
-//         | astMutateInPlace(node.input, mutator) | node.arguments.reduce(
-//         (accumulator, argObj) => (accumulator |= astMutateInPlace(argObj, mutator)),
-//         false
-//       )
-// 		case AST.LambdaExpression:
-// 			return nodeModified | astMutateInPlace(node.expression, mutator)
-// 		case AST.SortKeyExpression:
-// 			return nodeModified | astMutateInPlace(node.key, mutator)
-// 		case AST.ArrayExpression:
-//       return nodeModified | node.elements.reduce(
-//         (accumulator, elem) => (accumulator |= astMutateInPlace(elem, mutator)),
-//         false
-//       )
-//     case AST.ObjectExpression:
-//       return nodeModified | node.properties.reduce(
-//         (accumulator, prop) => (accumulator |= astMutateInPlace(prop, mutator)),
-//         false
-//       )
-//     case AST.Property:
-//       return nodeModified | astMutateInPlace(node.key, mutator) | astMutateInPlace(node.value, mutator)
-//     case AST.BinaryExpression:
-//     case AST.LogicalExpression:
-//       return nodeModified | astMutateInPlace(node.left, mutator) | astMutateInPlace(node.right, mutator)
-//     case AST.UnaryExpression:
-//       return nodeModified | astMutateInPlace(node.argument, mutator)
-//     case AST.ConditionalExpression:
-//       return nodeModified | astMutateInPlace(node.test, mutator) | astMutateInPlace(node.consequent, mutator)
-//         | astMutateInPlace(node.alternate, mutator)
-//     default:
-//       return false
-//   }
-// }
 
 function getExpressionPrecedence (node) {
 	if (node.type === AST.LambdaExpression)

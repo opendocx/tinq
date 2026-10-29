@@ -20,14 +20,6 @@ const defaultOptions = {
   includeLocation: false, // true includes character location metadata in AST
 }
 
-const untypedDefault = {
-  name: '*',
-  type: '*',
-  properties: [{ name: '*', type: '*', isList: '*' }],
-  functions: [{ name: '*', type: '*', isList: '*', params: [{ allowedTypes: 'expr', optional: true, repeated: true }] }],
-  filters: [{ name: '*', type: '*', isList: '*', params: [{ allowedTypes: 'expr', optional: true, repeated: true }] }],
-}
-
 const filterAliases = {}
 // initialize filterAliases
 for (const name in filters) {
@@ -43,13 +35,11 @@ export function GetFilter (name) {
 }
 
 export class Tinq {
-  constructor (options = {}, typeDefs = [untypedDefault]) {
+  constructor (options = {}) {
     this.options = { ...defaultOptions }
     for (const prop of Object.keys(options)) {
       this.options[prop] = options[prop]
     }
-    const typeDict = this.typeDict = {}
-    typeDefs.forEach(typeDef => typeDict[typeDef.name] = typeDef)
     this.expressioner = new ExpressionParser(GetFilter, { includeLocation: this.options.includeLocation })
     this.templater = new TemplateParser(this.expressioner)
     this.astCompiler = this.options.interpreter
@@ -168,9 +158,9 @@ export class Tinq {
 
   /**
    * Compiles ast and returns a function that executes ast on a target object.
-   * The compiled function is cached under compile.cache[src] to speed up further calls.
+   * Use compileExpression() when expression caching is needed.
    *
-   * @param {string} src
+   * @param {object} ast
    * @returns {function}
    */
   compile (ast) {

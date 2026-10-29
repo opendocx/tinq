@@ -63,7 +63,6 @@ export class ExpressionParser {
 	}
 
 	lambdaExpression () {
-		// const start = this.tokens[0].index
 		let result = //this.addLoc(
 			{
 				type: AST.LambdaExpression,

@@ -11,49 +11,10 @@ export class ASTInterpreterBase {
   }
 
   compile (ast) {
-    const self = this
     if (ast) {
       findConstantExpressions(ast, this.filters)
-      // let assignable
-      // let assign
-      // if ((assignable = assignableAST(ast))) {
-      // 	assign = this.recurse(assignable)
-      // }
     }
-    // const toWatch = getInputs(astProg.body)
-    // let inputs
-    // if (toWatch) {
-    // 	inputs = []
-    // 	toWatch.forEach((watch, key) => {
-    // 		const input = self.recurse(watch)
-    // 		watch.winput = input
-    // 		inputs.push(input)
-    // 		watch.watchId = key
-    // 	})
-    // }
-    let fn = this.recurse(ast)
-    // if (!ast || (ast.type === AST.Program && !ast.body.length)) { // special case
-    // 	fn = noop
-    // } else if (ast.type === AST.Program) { // it's a template AST, so compile the template
-    // 	const expressions = []
-    // 	ast.body.forEach(elem => {
-    // 		expressions.push(elem.type === AST.TemplateElement ? elem : self.recurse(elem.expression))
-    // 	})
-    // 	fn = function (scope) {
-    // 		let results = expressions.map(exp => exp(scope))
-    // 		return results.join()
-    // 	}
-    // } else { // it's just an expression AST, so compile the expression
-    // 	fn = self.recurse(ast)
-    // }
-    // if (assign) {
-    // 	fn.assign = function (scope, value) {
-    // 		return assign(scope, value)
-    // 	}
-    // }
-    // if (inputs) {
-    // 	fn.inputs = inputs
-    // }
+    const fn = this.recurse(ast)
     fn.ast = ast
     if (ast) {
       fn.literal = isLiteral(ast)
@@ -66,9 +27,6 @@ export class ASTInterpreterBase {
     if (!ast) return noop
     const self = this
     let left, right, args, expression, key
-    // if (ast.winput) {
-    // 	return this.inputs(ast.winput, ast.watchId)
-    // }
     switch (ast.type) {
       case AST.Program:
       case AST.TemplateBlock:
@@ -357,12 +315,6 @@ export class ASTInterpreterBase {
     }
   }
 
-  // inputs (input, watchId) {
-  // 	return function (scope, env, value, inputs) {
-  // 		if (inputs) return inputs[watchId]
-  // 		return input(scope, env, value)
-  // 	}
-  // }
 }
 
 function isFrameIdentifier (name) {

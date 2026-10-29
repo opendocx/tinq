@@ -43,10 +43,6 @@ describe("tinq.templater", function() {
         }).to.throw("src must be a string or AST object; instead saw 'undefined'")
       })
 
-      // it("should expose the ast", function() {
-      //   expect(tinq.compileTemplate("tmp").ast).to.be.a("object")
-      // })
-
       !options.interpreter && describe('Avoiding internal redundancy', function () {
         it('shoud avoid redundant internal structures', function () {
           const template = '{[list a.b.c|punc:"1,2"]}{[e.f]}{[endlist]}|{[list a.b.c|filter:d|punc:"1;2"]}{[e.f]}{[endlist]}'
@@ -97,15 +93,11 @@ describe("tinq.templater", function() {
         it('should assemble a simple template', function () {
           const template = 'Hello {[planet]}!'
           evaluate = tinq.compileTemplate(template)
-          // const data = TObject.pushObject({ planet: 'World' })
           const data = { planet: 'World' }
           const result = evaluate(data)
           assert.strictEqual(result, 'Hello World!')
         })
-        // it('should compile a conditional expression', function () {
-        //   evaluate = tinq.compileExpression('Middle?Middle+" ":""')
-        //   console.log(evaluate.toString())
-        // })
+
         it('should assemble the FullName template', function () {
           const template = '{[First]} {[if Middle]}{[Middle]} {[endif]}{[Last]}{[if Suffix]} {[Suffix]}{[endif]}'
           evaluate = tinq.compileTemplate(template)

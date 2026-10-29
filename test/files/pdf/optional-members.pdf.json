@@ -1,0 +1,27 @@
+[
+  {
+    "type": "Content",
+    "fieldName": "OfficeName",
+    "expr": "Office.Name"
+  },
+  {
+    "type": "Content",
+    "fieldName": "Street",
+    "expr": "Office.Address.Street"
+  },
+  {
+    "type": "Content",
+    "fieldName": "City",
+    "expr": "Office.Address.City"
+  },
+  {
+    "type": "Content",
+    "fieldName": "Region",
+    "expr": "Office.Region.Code"
+  },
+  {
+    "type": "Content",
+    "fieldName": "District",
+    "expr": "Office.District ? Office.District + \" District\" : null"
+  }
+]

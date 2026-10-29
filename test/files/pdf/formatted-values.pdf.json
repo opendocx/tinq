@@ -1,0 +1,12 @@
+[
+  {
+    "type": "Content",
+    "fieldName": "EventDate",
+    "expr": "EventDate | format: \"MM/DD/YYYY\" | else: \"\""
+  },
+  {
+    "type": "Content",
+    "fieldName": "SelectedItems",
+    "expr": "HasItems ? Items : []"
+  }
+]

@@ -1,0 +1,22 @@
+[
+  {
+    "type": "Content",
+    "fieldName": "LeadName",
+    "expr": "Team.Lead.Name"
+  },
+  {
+    "type": "Content",
+    "fieldName": "BackupName",
+    "expr": "Team.Backup.Name"
+  },
+  {
+    "type": "Content",
+    "fieldName": "DisplayName",
+    "expr": "PreferredName ? PreferredName : Team.Lead.Name ? Team.Lead.Name : \"\""
+  },
+  {
+    "type": "Content",
+    "fieldName": "RepeatedName",
+    "expr": "Team.Lead.Name"
+  }
+]

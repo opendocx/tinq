@@ -1,0 +1,22 @@
+[
+  {
+    "type": "Content",
+    "fieldName": "PersonName",
+    "expr": "Kind == \"person\" ? Name : null"
+  },
+  {
+    "type": "Content",
+    "fieldName": "OrganizationName",
+    "expr": "Kind != \"person\" ? Name : null"
+  },
+  {
+    "type": "Content",
+    "fieldName": "Street",
+    "expr": "Contact.Address.Street"
+  },
+  {
+    "type": "Content",
+    "fieldName": "City",
+    "expr": "Contact.Address.City"
+  }
+]

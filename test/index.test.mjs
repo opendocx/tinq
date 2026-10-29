@@ -352,23 +352,7 @@ describe("tinq", function() {
 					const template = tinq.compileTemplate('{[if values]}yes{[else]}no{[endif]}')
 					expect(template(scope)).to.equal('no')
 				});
-	
-				/* Ooops, angular doesn't support ++. Maybe someday?
-							it("should return the expected result when using ++", function () {
-									scope.value = 2;
-									evaluate = compiler.compile("value++");
-									expect(evaluate()).to.equal(3);
-									expect(scope.value).to.equal(3);
-							});*/
-	
-				/* Ooops, angular doesn't support --. Maybe someday?
-							it("should return the expected result when using --", function () {
-									scope.value = 2;
-									evaluate = compiler.compile("value--");
-									expect(evaluate()).to.equal(1);
-									expect(scope.value).to.equal(1);
-							});*/
-	
+
 				it("should return the expected result when using ?", function() {
 					evaluate = tinq.compileExpression("true? 'it works' : false");
 					expect(evaluate()).to.equal("it works");
@@ -535,43 +519,7 @@ describe("tinq", function() {
 					expect(tinq.compileExpression("a")).to.equal(tinq.compileExpression("a"));
 				});
 			});
-	
-			// describe("for assigning values", function() {
-			// 	beforeEach(function() {
-			// 		scope = {};
-			// 	});
-	
-			// 	it("should expose an 'assign'-function", function() {
-			// 		var fn = compiler.compile("a");
-	
-			// 		expect(fn.assign).to.be.a("function");
-			// 		fn.assign(scope, 123);
-			// 		expect(scope.a).to.equal(123);
-			// 	});
-	
-			// 	describe("the 'assign'-function", function() {
-			// 		it("should work for expressions ending with brackets", function() {
-			// 			var fn = compiler.compile("a.b['c']");
-	
-			// 			fn.assign(scope, 123);
-			// 			expect(scope.a.b.c).to.equal(123);
-			// 		});
-	
-			// 		it("should work for expressions with brackets in the middle", function() {
-			// 			var fn = compiler.compile('a["b"].c');
-	
-			// 			fn.assign(scope, 123);
-			// 			expect(scope.a.b.c).to.equal(123);
-			// 		});
-	
-			// 		it("should return the result of the assignment", function() {
-			// 			var fn = compiler.compile('a["b"].c');
-	
-			// 			expect(fn.assign(scope, 123)).to.equal(123);
-			// 		});
-			// 	});
-			// });
-	
+
 			describe(".cache", function() {
 				it("should be an object by default", function() {
 					expect(tinq.cache).to.be.an("object");

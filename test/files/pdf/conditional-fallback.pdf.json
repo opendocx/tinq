@@ -1,0 +1,12 @@
+[
+  {
+    "type": "Content",
+    "fieldName": "DisplayName",
+    "expr": "PrimaryName ? PrimaryName : Contact.Name ? Contact.Name : \"\""
+  },
+  {
+    "type": "Content",
+    "fieldName": "Flag",
+    "expr": "Enabled ? \"Yes\" : \"\""
+  }
+]

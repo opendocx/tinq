@@ -7,7 +7,7 @@ chai.config.includeStack = true;
 
 var testPhases = ['interpreter', 'compiler']
 
-describe("YEvaluate Filters", function() {
+describe("TINQ filters", function() {
 
   testPhases.forEach(phase => {
     const options = { interpreter: (phase === 'interpreter') }

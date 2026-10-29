@@ -143,7 +143,8 @@ warnings.
 
 TINQ is licensed under the [Mozilla Public License 2.0](LICENSE).
 It includes code reworked from yatte (MPL-2.0), angular-expressions
-(Unlicense), and AngularJS (MIT). See [third-party notices](THIRD_PARTY_NOTICES.md)
+(Unlicense), AngularJS (MIT), and AString (MIT). See
+[third-party notices](THIRD_PARTY_NOTICES.md)
 for upstream attribution and license texts.
 
 MPL-2.0 permits TINQ to be used in a larger proprietary application. When

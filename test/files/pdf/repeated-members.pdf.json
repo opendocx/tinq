@@ -1,0 +1,42 @@
+[
+  {
+    "type": "Content",
+    "fieldName": "LeadName",
+    "expr": "Team.Lead.Name"
+  },
+  {
+    "type": "Content",
+    "fieldName": "LeadStreet",
+    "expr": "Team.Lead.Address.Street"
+  },
+  {
+    "type": "Content",
+    "fieldName": "LeadCity",
+    "expr": "Team.Lead.Address.City"
+  },
+  {
+    "type": "Content",
+    "fieldName": "LeadTitle",
+    "expr": "LeadTitle"
+  },
+  {
+    "type": "Content",
+    "fieldName": "BackupName",
+    "expr": "Team.Backup.Name"
+  },
+  {
+    "type": "Content",
+    "fieldName": "BackupStreet",
+    "expr": "Team.Backup.Address.Street"
+  },
+  {
+    "type": "Content",
+    "fieldName": "BackupCity",
+    "expr": "Team.Backup.Address.City"
+  },
+  {
+    "type": "Content",
+    "fieldName": "BackupTitle",
+    "expr": "BackupTitle"
+  }
+]

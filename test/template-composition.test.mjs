@@ -52,15 +52,7 @@ describe("plain text composition", function() {
       'This is a parent document, Fred.\nThis is an inserted template, Fred.\nThis is the parent document again, Fred.'
     )
   })
-  // currently this seems to be the same test as the one above, so we'll skip it
-  // it('should catch "external" infinite recursion without overflowing the stack', function () {
-  //   const template = '{[Name]}'
-  //   const scope = {
-  //     Name: tinq.compileExternal('Name', 'This is an inserted template, {[Name]}.'),
-  //   }
-  //   const evaluate = tinq.compileTemplate(template)
-  //   expect(() => evaluate(scope)).to.throw(RecursionError)
-  // })
+
   it('allows text composition with text from custom functions', function () {
     const textFunc = scope => 'my custom value'
     textFunc.ast = true // <-- required
@@ -109,14 +101,10 @@ describe("plain text composition", function() {
     }
     const evaluate = tinq.compileExternal('Main', tinq.parseTemplate(template))
     const result = evaluate(scope)
-    // debugger
     // todo: if this were a supportable thing to do/if there were realistic use cases for this,
     // we would want to implement something in the API to compose the resulting data structure
     // into plain text! (where it takes the AST + extracted data + table of externals and produces
     // plain text.)
-    // expect(result).to.equal(
-    //   'This is a parent document, Fred.\nFred's custom value\nParent again, Fred.'
-    // )
   })
 })
 

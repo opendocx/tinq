@@ -316,16 +316,11 @@ export class TemplateParser {
         result.commentPrefix = token.commentPrefix
       }
       if (token.soloLine) {
-        // const nextToken = this.peek()
-        // if (nextToken.token === 'Quasi') {
-        // } else {
         this.tokens.unshift({
           token: 'Quasi',
           index: token.index + (token.rawText ?? token.text).length + 4,
           text: '\n'
         })
-        // }
-        //result.soloLine = true
       }
       if (token.fieldNum) {
         result.fieldNum = token.fieldNum

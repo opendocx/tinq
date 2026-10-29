@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-import { isConstant, isDefined, isLiteral, isString, isNumber, isTruthy, ifDefined as ifd, plusFn as pls, assignableAST, isAssignable, getInputs, findConstantExpressions, noop } from "./utils.mjs"
+import { isConstant, isDefined, isLiteral, isString, isNumber, isTruthy, ifDefined as ifd, plusFn as pls, findConstantExpressions, noop } from "./utils.mjs"
 import { useScope as use } from "./scope.mjs"
 import { AST } from "./ast.mjs";
 
@@ -43,29 +43,6 @@ export class ASTCompiler {
         this.recurse(rnode, lid)
         this.return_(lid)
       }
-      // let assignable
-      // this.stage = "assign"
-      // if ((assignable = assignableAST(ast))) {
-      // 	this.state.computing = "assign"
-      // 	const result = this.nextId()
-      // 	this.recurse(assignable, result)
-      // 	this.return_(result)
-      // 	extra = "fn.assign=" + this.generateFunction("assign", "s,v")
-      // }
-      // const toWatch = getInputs(ast.body)
-      // self.stage = "inputs"
-      // if (toWatch) {
-      // 	toWatch.forEach((watch, key) => {
-      // 		const fnKey = "fn" + key
-      // 		self.state[fnKey] = { vars: [], body: [], own: {} }
-      // 		self.state.computing = fnKey
-      // 		const intoId = self.nextId()
-      // 		self.recurse(watch, intoId)
-      // 		self.return_(intoId)
-      // 		self.state.inputs.push(fnKey)
-      // 		watch.watchId = key
-      // 	})
-      // }
     }
     this.state.computing = "fn"
     this.stage = "main"
@@ -527,18 +504,6 @@ export class ASTCompiler {
         break
     }
   }
-
-  // getHasOwnProperty (element, property) {
-  // 	const key = element + "." + property
-  // 	const own = this.current().own
-  // 	if (!own.hasOwnProperty(key)) {
-  // 		own[key] = this.nextId(
-  // 			false,
-  // 			element + "&&(" + escape(property) + " in " + element + ")"
-  // 		)
-  // 	}
-  // 	return own[key]
-  // }
 
   hasCachedExpr (cacheKey) {
     return this.current().own.hasOwnProperty(cacheKey)

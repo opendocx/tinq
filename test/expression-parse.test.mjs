@@ -11,11 +11,6 @@ describe('Parsing expressions ', function () {
   const tinq = new Tinq({includeLocation: true})
 
   describe('via exported API', function () {
-    // it('should reuse a compiled expression rather than re-compiling it', function () {
-    //   const ast = compiler.parse('A + B')
-    //   const evaluator2 = compiler.compile('A + B')
-    //   assert.strictEqual(evaluator, evaluator2)
-    // })
 
     it('should correctly categorize the outcomes of a conditional expression', function () {
       const ast = tinq.parseExpression('test ? consequent : alternative')
@@ -55,7 +50,6 @@ describe('Parsing expressions ', function () {
       tinq.expressioner.options.includeLocation = false
       const ast = tinq.parseExpression(expr)
       const normalized = AST.serialize(ast)
-      // const ast = compiler.parse(expr)
       tinq.expressioner.options.includeLocation = true
       assert.deepStrictEqual(normalized, 'Families|any:Children|any:Birthdate>currentDate')
       assert.deepStrictEqual(ast, ListFilterAST)
@@ -188,23 +182,6 @@ describe('Parsing expressions ', function () {
         },
       ],
     }
-
-  //   it('cleans up parse errors thrown by angular-expressions', function () {
-  //     assert.throws(() => compiler.compile('members|name!=this.name'), // forgot "filter" filter
-  //       {
-  //         name: 'SyntaxError',
-  //         message: "Syntax Error: '!=' is an unexpected token:\nmembers|name!=this.name\n            ^^"
-  //       })
-  //     assert.throws(() => compiler.compile('ProbateClient.MaritalStatus == “Married”'), // used curly quotes
-  //       {
-  //         name: 'SyntaxError',
-  //         message: "Lexer Error: Unexpected next character '“':\nProbateClient.MaritalStatus == “Married”\n                               ^" })
-  //     assert.throws(() => compiler.compile('Name|UPPER'), // non-existing filter
-  //       {
-  //         name: 'SyntaxError',
-  //         message: 'Syntax Error: did you refer to a nonexistent filter?\nName|UPPER'
-  //       })
-  //   })
 
     it('correctly serializes grouping in nested conditionals (grouping needed)', function () {
       const ast = tinq.parseExpression(`a
