@@ -1,0 +1,69 @@
+# Development notes
+
+Reviewed against the implementation and current project direction on 2026-10-29.
+These are candidates for investigation, not a committed roadmap or release
+requirements. See README.md for supported features and development status.
+
+TINQ's current focus is expression and text-template parsing, compilation,
+evaluation, list filters, and optional explicit lowered-frame access. Keep the
+library broadly type-agnostic and usable independently. Host applications own
+their static type/model resolution and application-specific evaluation policies.
+
+## Remaining maintenance and investigation
+
+- Finish reviewing inherited Angular-style watch/input machinery.
+  Watch discovery and input-function generation are disabled, but compiler
+  watchId handling and empty input/assignment scaffolding remain in
+  src/astcompiler.mjs. Preserve active constant analysis. Keep host applications' dependency tracking separate, and
+  do not remove the legacy assign/inputs argument slots without reviewing
+  compatibility with the current scope, env, assign, inputs signature.
+
+- Assess whether broader normalized-expression cache reuse is worthwhile.
+  compileExpression already caches source strings, adds a normalized-string
+  alias, and caches AST inputs using serialization plus lowered frame metadata.
+  A previously unseen formatting variant can still compile a separate function.
+  Any additional canonicalization must preserve lowering semantics and the
+  expected source-location metadata. Establish a useful workload before adding
+  cache complexity.
+
+- Investigate source maps or other debugging aids for generated JavaScript.
+  Interpreter mode already exists; mapping generated code back to an expression
+  or template is a separate, still-open debugging idea. AST source locations
+  alone are not generated-code source maps.
+
+## Ideas requiring a separate design decision
+
+- Additional expression syntax: template literals, spread, exponentiation, or
+  named iteration variables. Evaluate each feature against concrete template
+  use cases and compatibility, rather than treating JavaScript feature parity
+  as a goal. Existing list filters and list fields already handle iteration;
+  a general for...of statement would extend the language beyond that model.
+
+- True expression-local variables or explicit expression parameters.
+  Assignment expressions already work, but declarations and lexical parameter
+  scopes would need their own design. Preserve current assignment behavior
+  while assessing this; the env argument is for lowered frames, and assign is
+  the legacy assignment-helper slot, not a new locals/parameters object.
+
+- Promise-aware expression or template evaluation.
+  Core evaluation is synchronous. External composition and batching can describe
+  work that a consuming application performs asynchronously; this is not the
+  same as awaiting promises inside expressions or text templates. Any native
+  async API needs an explicit use case and compatibility plan.
+
+## Host application integration
+
+Keep application-specific integration planning with the host applications.
+Propose any needed generic TINQ extensions separately.
+
+- Preserve the plain-data/value API. Host applications can adapt inputs,
+  outputs, and error handling to their own runtime conventions.
+
+- Host applications can resolve and lower expressions using their own models.
+  TINQ supports optional explicit env frames, including named list/lambda
+  frames, while retaining ordinary dynamic lookup for unlowered expressions.
+  Preserve current this/$locals compatibility; $locals serializes as this.
+
+- External-composition interfaces can support host applications' file assembly
+  workflows. File-format implementation and deployment infrastructure remain
+  outside the core library.
